@@ -3,11 +3,14 @@ import json
 import time
 import hmac
 import hashlib
+import logging
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 
 import httpx
 import websockets
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,8 +45,8 @@ class OrderBook:
 
 
 class BinanceClient:
-    SPOT_BASE = "wss://stream.binance.com:9443/ws"
-    FUTURES_BASE = "wss://fstream.binance.com/ws"
+    SPOT_BASE = "wss://stream.binance.com:9443"
+    FUTURES_BASE = "wss://fstream.binance.com"
     REST_BASE = "https://api.binance.com"
     FUTURES_REST_BASE = "https://fapi.binance.com"
 
@@ -70,7 +73,7 @@ class BinanceClient:
             try:
                 cb(data)
             except Exception as e:
-                print(f"[Callback error] {event}: {e}")
+                logger.error(f"Callback error {event}: {e}")
 
     async def get_exchange_info(self) -> List[Dict]:
         async with httpx.AsyncClient() as cli:
@@ -97,6 +100,15 @@ class BinanceClient:
 
         volumes.sort(key=lambda x: x[1], reverse=True)
         return [s for s, v in volumes[:limit]]
+
+    async def get_common_symbols(self, limit: int = 30, min_volume: float = 10_000_000) -> List[str]:
+        top = await self.get_top_symbols(limit=limit*2, min_volume=min_volume)
+        async with httpx.AsyncClient() as cli:
+            resp = await cli.get(f"{self.FUTURES_REST_BASE}/fapi/v1/exchangeInfo")
+            data = resp.json()
+        futures_symbols = {s["symbol"] for s in data["symbols"] if s["status"] == "TRADING"}
+        common = [s for s in top if s in futures_symbols]
+        return common[:limit]
 
     async def get_funding_rates(self, symbols: List[str]) -> Dict[str, float]:
         async with httpx.AsyncClient() as cli:
@@ -128,11 +140,21 @@ class BinanceClient:
                         data = json.loads(msg)
                         if data.get("stream") and data.get("data"):
                             self._handle_spot_ticker(data["data"])
-            except Exception as e:
+            except websockets.ConnectionClosed as e:
                 if self._running:
                     await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Spot WS error: {e}")
+                if self._running:
+                    await asyncio.sleep(10)
 
     async def _futures_ws_loop(self, symbols: List[str]):
+        batch_size = 40
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            asyncio.create_task(self._futures_batch_loop(batch))
+
+    async def _futures_batch_loop(self, symbols: List[str]):
         ticker_streams = "/".join(f"{s.lower()}@ticker" for s in symbols)
         mark_streams = "/".join(f"{s.lower()}@markPrice" for s in symbols)
         streams = f"{ticker_streams}/{mark_streams}"
@@ -140,7 +162,6 @@ class BinanceClient:
         while self._running:
             try:
                 async with websockets.connect(uri, ping_interval=20) as ws:
-                    self._futures_ws = ws
                     async for msg in ws:
                         data = json.loads(msg)
                         if data.get("stream") and data.get("data"):
@@ -150,9 +171,13 @@ class BinanceClient:
                                 self._handle_mark_price(d)
                             else:
                                 self._handle_futures_ticker(d)
-            except Exception as e:
+            except websockets.ConnectionClosed as e:
                 if self._running:
                     await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Futures WS error: {e}")
+                if self._running:
+                    await asyncio.sleep(10)
 
     def _handle_spot_ticker(self, d: Dict):
         sym = d["s"]

@@ -1,8 +1,13 @@
 import asyncio
 import json
 import time
+import logging
 from typing import Set, Dict, Any
 from pathlib import Path
+
+from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
@@ -13,8 +18,6 @@ from strategies.funding_arb import FundingArbitrage
 from strategies.triangular_arb import TriangularArbitrage
 from trading.engine import PaperEngine
 from database import init_db, get_recent_opportunities, get_open_orders, get_balances
-
-app = FastAPI(title="Arbitrage Dashboard")
 
 client: BinanceClient = None
 funding_strategy: FundingArbitrage = None
@@ -49,8 +52,8 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global client, funding_strategy, triangular_strategy, paper, start_time
     start_time = time.time()
     init_db()
@@ -60,11 +63,11 @@ async def startup():
         secret_key=settings.binance_secret_key,
     )
 
-    symbols = await client.get_top_symbols(
+    symbols = await client.get_common_symbols(
         limit=settings.max_symbols,
         min_volume=settings.min_volume_24h_usdt,
     )
-    print(f"Tracking {len(symbols)} symbols: {symbols}")
+    logger.info(f"Tracking {len(symbols)} symbols (spot+futures): {symbols}")
 
     paper = PaperEngine()
     await paper.start()
@@ -102,7 +105,7 @@ async def startup():
 
         trade = await paper.evaluate_and_execute("funding", op)
         if trade:
-            print(f"[AUTO-TRADE] Funding arb executed: {op.symbol} ${trade['notional']}")
+            logger.info(f"Funding arb executed: {op.symbol} ${trade['notional']}")
 
     async def on_triangular_op(op):
         db_op_id = None
@@ -130,7 +133,7 @@ async def startup():
 
         trade = await paper.evaluate_and_execute("triangular", op)
         if trade:
-            print(f"[AUTO-TRADE] Triangular arb executed: {op.path} ${trade['notional']}")
+            logger.info(f"Triangular arb executed: {op.path} ${trade['notional']}")
 
     async def on_trade(result):
         await manager.broadcast({
@@ -146,6 +149,16 @@ async def startup():
     asyncio.create_task(funding_strategy.start())
     asyncio.create_task(triangular_strategy.start())
     asyncio.create_task(ticker_broadcaster())
+
+    yield
+
+    funding_strategy.stop()
+    triangular_strategy.stop()
+    paper.stop()
+    await client.stop()
+
+
+app = FastAPI(title="Arbitrage Dashboard", lifespan=lifespan)
 
 
 async def ticker_broadcaster():
@@ -223,10 +236,10 @@ async def update_config(req: Request):
     if paper:
         if "auto_trade" in body:
             paper.auto_trade = bool(body["auto_trade"])
-            print(f"[CONFIG] auto_trade -> {paper.auto_trade}")
+            logger.info(f"auto_trade -> {paper.auto_trade}")
         if "trade_size_pct" in body:
             paper.trade_size_pct = float(body["trade_size_pct"])
-            print(f"[CONFIG] trade_size_pct -> {paper.trade_size_pct}%")
+            logger.info(f"trade_size_pct -> {paper.trade_size_pct}%")
         return {"status": "ok", "config": await paper.get_config()}
     return {"status": "error"}
 
@@ -270,7 +283,7 @@ async def websocket_endpoint(ws: WebSocket):
                     val = msg.get("value", False)
                     if paper:
                         paper.auto_trade = bool(val)
-                        print(f"[UI] auto_trade -> {paper.auto_trade}")
+                        logger.info(f"auto_trade -> {paper.auto_trade}")
                     await ws.send_json({"type": "config_ack", "auto_trade": bool(val)})
 
                 elif action == "set_trade_size":
