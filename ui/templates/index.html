@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Arbitrage Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0e17;color:#e0e6f0;height:100vh;overflow:hidden}
+.app{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr auto;height:100vh;gap:8px;padding:8px}
+.header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:#111827;border-radius:8px}
+.header h1{font-size:18px;color:#60a5fa}
+.header .status{display:flex;gap:16px;font-size:13px;flex-wrap:wrap}
+.status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.dot.green{background:#22c55e;box-shadow:0 0 6px #22c55e}
+.dot.yellow{background:#eab308;box-shadow:0 0 6px #eab308}
+.dot.red{background:#ef4444;box-shadow:0 0 6px #ef4444}
+.panel{background:#111827;border-radius:8px;padding:10px;overflow:hidden;display:flex;flex-direction:column}
+.panel h2{font-size:14px;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.panel-body{flex:1;overflow-y:auto;font-size:13px}
+.panel-body::-webkit-scrollbar{width:4px}
+.panel-body::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:6px 8px;font-size:11px;color:#64748b;text-transform:uppercase;position:sticky;top:0;background:#111827;z-index:1}
+td{padding:4px 8px;border-top:1px solid #1e293b;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr:hover td{background:#1e293b}
+.price{font-weight:600}
+.green{color:#22c55e}
+.red{color:#ef4444}
+.yellow{color:#eab308}
+.blue{color:#60a5fa}
+.opportunity{border-left:3px solid #60a5fa;margin:4px 0;padding:8px;background:#1a2332;border-radius:4px;font-size:12px}
+.opportunity.funding{border-color:#eab308}
+.opportunity.triangular{border-color:#a78bfa}
+.opportunity .title{font-weight:600;margin-bottom:4px}
+.opportunity .detail{display:flex;gap:12px;color:#94a3b8;flex-wrap:wrap}
+.opportunity .detail span{white-space:nowrap}
+
+.controls{grid-column:1/-1;display:flex;gap:8px;padding:6px 16px;background:#111827;border-radius:8px;align-items:center;flex-wrap:wrap}
+.controls button{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s}
+.controls button:hover{opacity:.8}
+.controls label{font-size:12px;color:#94a3b8}
+.controls input[type=range]{width:100px;height:4px;-webkit-appearance:none;background:#334155;border-radius:2px;outline:none}
+.controls input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#60a5fa;cursor:pointer}
+.controls .size-val{color:#60a5fa;font-weight:700;font-size:13px;min-width:40px;text-align:center}
+
+.btn-start{background:#22c55e;color:#0a0e17}
+.btn-stop{background:#ef4444;color:#fff}
+.btn-auto-on{background:#22c55e;color:#0a0e17}
+.btn-auto-off{background:#334155;color:#e0e6f0}
+.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.badge.buy{background:#22c55e33;color:#22c55e}
+.badge.sell{background:#ef444433;color:#ef4444}
+.badge.apr{background:#eab30833;color:#eab308}
+.badge.auto{background:#22c55e33;color:#22c55e}
+.acct-card{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+.acct-item{background:#1a2332;padding:8px;border-radius:4px;text-align:center}
+.acct-item .label{font-size:10px;color:#64748b;text-transform:uppercase}
+.acct-item .value{font-size:16px;font-weight:700;margin-top:2px}
+.trade-count{margin-top:8px;text-align:center;font-size:12px;color:#64748b}
+@media(max-width:1024px){.app{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>Arbitrage Engine</h1>
+    <div class="status">
+      <span><span class="dot" id="wsDot">&#9679;</span> WS: <span id="wsStatus">connecting</span></span>
+      <span><span class="dot green">&#9679;</span> Symbols: <span id="symCount">0</span></span>
+      <span>Latency: <span id="wsLatency">0</span>ms</span>
+      <span>Uptime: <span id="uptime">00:00:00</span></span>
+    </div>
+  </div>
+
+  <div class="panel" style="grid-row:2">
+    <h2>Tickers</h2>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>Symbol</th><th>Spot</th><th>Futures</th><th>Basis%</th><th>Fund Rate</th><th>Vol 24h</th></tr></thead>
+        <tbody id="tickerTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" style="grid-row:2">
+    <h2>Account</h2>
+    <div class="panel-body">
+      <div class="acct-card" id="acctCard">
+        <div class="acct-item"><div class="label">Balance</div><div class="value blue" id="acctBalance">0.00</div></div>
+        <div class="acct-item"><div class="label">P&amp;L</div><div class="value" id="acctPnl">0.00</div></div>
+        <div class="acct-item"><div class="label">Return</div><div class="value" id="acctReturn">0.00%</div></div>
+        <div class="acct-item"><div class="label">Positions</div><div class="value" id="acctPositions">0</div></div>
+      </div>
+      <div class="trade-count" id="tradeCount">0 trades executed</div>
+      <h2 style="margin-top:8px">Opportunities</h2>
+      <div id="opportunities"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="grid-column:1/-1;max-height:250px">
+    <h2>Trades</h2>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>Time</th><th>Type</th><th>Symbol/Path</th><th>Notional</th><th>Fee</th><th>Net Profit</th><th>Balance</th></tr></thead>
+        <tbody id="tradeTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label>Mode:</label>
+    <span id="modeBadge" class="badge" style="background:#22c55e33;color:#22c55e">PAPER</span>
+    <span style="color:#334155">|</span>
+
+    <button id="autoTradeBtn" class="btn-auto-off" onclick="toggleAutoTrade()">AUTO: OFF</button>
+    <span style="color:#334155">|</span>
+
+    <label>Per Trade:</label>
+    <input type="range" id="sizeSlider" min="0.5" max="100" step="0.5" value="10" oninput="updateTradeSize(this.value)">
+    <span class="size-val" id="sizeVal">10%</span>
+    <span style="color:#334155">|</span>
+
+    <label>Funding:</label>
+    <button class="btn-start" id="fundStart" onclick="toggleStrategy('funding','start')">Start</button>
+    <button class="btn-stop" id="fundStop" onclick="toggleStrategy('funding','stop')" style="display:none">Stop</button>
+    <span style="color:#334155">|</span>
+
+    <label>Triangular:</label>
+    <button class="btn-start" id="triStart" onclick="toggleStrategy('triangular','start')">Start</button>
+    <button class="btn-stop" id="triStop" onclick="toggleStrategy('triangular','stop')" style="display:none">Stop</button>
+  </div>
+</div>
+
+<script>
+const ws = new WebSocket(`ws://${location.host}/ws`);
+let pingTime = 0;
+let tradeCount = 0;
+
+ws.onopen = () => {
+  document.getElementById('wsDot').className = 'dot green';
+  document.getElementById('wsStatus').textContent = 'connected';
+};
+
+ws.onclose = () => {
+  document.getElementById('wsDot').className = 'dot red';
+  document.getElementById('wsStatus').textContent = 'disconnected';
+  setTimeout(() => location.reload(), 3000);
+};
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  switch(msg.type) {
+    case 'tickers': updateTickers(msg.data); break;
+    case 'account': updateAccount(msg.data); break;
+    case 'opportunity': addOpportunity(msg); break;
+    case 'trade': addTrade(msg.data); break;
+    case 'config_ack':
+      if (msg.auto_trade !== undefined) updateAutoTradeUI(msg.auto_trade);
+      if (msg.trade_size_pct !== undefined) updateSizeUI(msg.trade_size_pct);
+      break;
+    case 'pong': {
+      const lat = Date.now() - pingTime;
+      document.getElementById('wsLatency').textContent = lat;
+      break;
+    }
+  }
+};
+
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    pingTime = Date.now();
+    ws.send(JSON.stringify({action:'ping'}));
+  }
+}, 5000);
+
+function fmt(v) {
+  if (v === undefined || v === null) return '-';
+  if (typeof v === 'number') {
+    if (Math.abs(v) < 0.01) return v.toFixed(6);
+    if (Math.abs(v) < 1) return v.toFixed(4);
+    return v.toFixed(2);
+  }
+  return v;
+}
+
+function fmtRate(v) {
+  if (!v && v !== 0) return '-';
+  return (v * 100).toFixed(4) + '%';
+}
+
+function fmtUptime(secs) {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+
+function updateTickers(data) {
+  const tbody = document.getElementById('tickerTable');
+  let html = '';
+  let count = 0;
+  for (const [sym, t] of Object.entries(data)) {
+    count++;
+    const basis = t.spot && t.futures ? ((t.futures - t.spot) / t.spot * 100).toFixed(3) : '-';
+    const basisCls = basis !== '-' && parseFloat(basis) > 0 ? 'green' : basis !== '-' && parseFloat(basis) < 0 ? 'red' : '';
+    const fr = t.funding ? (t.funding * 100).toFixed(4) : '-';
+    const frCls = t.funding > 0 ? 'green' : t.funding < 0 ? 'red' : '';
+    html += `<tr>
+      <td><strong>${sym}</strong></td>
+      <td class="price blue">${fmt(t.spot)}</td>
+      <td class="price">${fmt(t.futures)}</td>
+      <td class="${basisCls}">${basis}%</td>
+      <td class="${frCls}">${fr}%</td>
+      <td style="color:#64748b">${t.spot_vol ? (t.spot_vol/1e6).toFixed(1)+'M' : '-'}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+  document.getElementById('symCount').textContent = count;
+}
+
+function updateAccount(data) {
+  document.getElementById('acctBalance').textContent = fmt(data.balance_usdt);
+  const pnlEl = document.getElementById('acctPnl');
+  pnlEl.textContent = fmt(data.total_pnl);
+  pnlEl.className = 'value ' + (data.total_pnl >= 0 ? 'green' : 'red');
+  const retEl = document.getElementById('acctReturn');
+  retEl.textContent = fmt(data.return_pct) + '%';
+  retEl.className = 'value ' + (data.return_pct >= 0 ? 'green' : 'red');
+  document.getElementById('acctPositions').textContent = data.open_positions;
+
+  if (data.uptime) {
+    document.getElementById('uptime').textContent = fmtUptime(data.uptime);
+  }
+  if (data.auto_trade !== undefined) {
+    updateAutoTradeUI(data.auto_trade);
+  }
+  if (data.trade_size_pct !== undefined) {
+    updateSizeUI(data.trade_size_pct);
+  }
+}
+
+function updateAutoTradeUI(enabled) {
+  const btn = document.getElementById('autoTradeBtn');
+  btn.textContent = enabled ? 'AUTO: ON' : 'AUTO: OFF';
+  btn.className = enabled ? 'btn-auto-on' : 'btn-auto-off';
+}
+
+function updateSizeUI(pct) {
+  document.getElementById('sizeSlider').value = pct;
+  document.getElementById('sizeVal').textContent = pct + '%';
+}
+
+function toggleAutoTrade() {
+  const btn = document.getElementById('autoTradeBtn');
+  const newVal = !btn.textContent.includes('ON');
+  ws.send(JSON.stringify({action: 'set_auto_trade', value: newVal}));
+}
+
+function updateTradeSize(val) {
+  document.getElementById('sizeVal').textContent = val + '%';
+  ws.send(JSON.stringify({action: 'set_trade_size', value: parseFloat(val)}));
+}
+
+function addOpportunity(msg) {
+  const container = document.getElementById('opportunities');
+  const strat = msg.strategy;
+  const d = msg.data;
+  let html = '';
+
+  if (strat === 'funding') {
+    html = `<div class="opportunity funding">
+      <div class="title"><span class="badge ${d.action.includes('short') ? 'sell' : 'buy'}">${d.action}</span> ${d.symbol}</div>
+      <div class="detail">
+        <span>FR: <strong class="${d.funding_rate > 0 ? 'green' : 'red'}">${fmtRate(d.funding_rate)}</strong></span>
+        <span>Basis: <strong>${d.basis_pct}%</strong></span>
+        <span class="badge apr">APR: ${fmt(d.expected_apr)}%</span>
+        <span>Spot: ${fmt(d.spot_price)}</span>
+        <span>Fut: ${fmt(d.futures_price)}</span>
+      </div>
+    </div>`;
+  } else {
+    html = `<div class="opportunity triangular">
+      <div class="title">${d.path}</div>
+      <div class="detail">
+        <span>Profit: <strong class="green">${d.profit_pct}%</strong></span>
+        <span>Rate: ${d.rate}</span>
+        <span>Conf: ${fmt(d.confidence)}</span>
+      </div>
+    </div>`;
+  }
+
+  container.insertAdjacentHTML('afterbegin', html);
+  while (container.children.length > 50) {
+    container.removeChild(container.lastChild);
+  }
+}
+
+function addTrade(data) {
+  tradeCount++;
+  document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
+
+  const tbody = document.getElementById('tradeTable');
+  const now = new Date().toLocaleTimeString();
+  const type = data.type === 'funding' ? 'Funding Arb' : 'Triangular';
+  const symbol = data.symbol || data.path || '-';
+  const pnl = data.net_profit_expected !== undefined ? data.net_profit_expected : 0;
+  const pnlCls = pnl >= 0 ? 'green' : 'red';
+
+  const row = `<tr>
+    <td style="color:#64748b">${now}</td>
+    <td><span class="badge" style="background:#60a5fa33;color:#60a5fa">${type}</span></td>
+    <td>${symbol}</td>
+    <td>${fmt(data.notional)}</td>
+    <td style="color:#ef4444">${fmt(data.fee)}</td>
+    <td class="${pnlCls}">${fmt(pnl)}</td>
+    <td class="blue">${fmt(data.balance_remaining)}</td>
+  </tr>`;
+  tbody.insertAdjacentHTML('afterbegin', row);
+  while (tbody.children.length > 100) {
+    tbody.removeChild(tbody.lastChild);
+  }
+}
+
+async function toggleStrategy(strategy, action) {
+  try {
+    const resp = await fetch(`/api/${action}/${strategy}`, {method:'POST'});
+    const result = await resp.json();
+    if (result.status === 'started' || result.status === 'stopped') {
+      const startBtn = document.getElementById(strategy + 'Start');
+      const stopBtn = document.getElementById(strategy + 'Stop');
+      if (action === 'start') {
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+      } else {
+        startBtn.style.display = 'inline-block';
+        stopBtn.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>
