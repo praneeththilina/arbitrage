@@ -111,7 +111,7 @@ async def ticker_broadcaster():
                 tickers_data = {}
                 
                 for sym, t in list(client.tickers.items())[:settings.max_symbols]:
-                    if t.spot_price > 0 and t.futures_price > 0:
+                    if t.spot_price > 0 or t.futures_price > 0:
                         tickers_data[sym] = {
                             "spot": t.spot_price,
                             "futures": t.futures_price,
