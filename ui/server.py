@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Cross-pair symbols to track: {cross_symbols}")
 
     paper = PaperEngine()
+    paper.set_client(client)
     await paper.start()
 
     funding_strategy = FundingArbitrage(client)
@@ -198,6 +199,7 @@ async def ticker_broadcaster():
         if paper:
             status = await paper.get_status()
             status["uptime"] = int(now - start_time)
+            status["open_positions_list"] = paper.get_open_positions()
             await manager.broadcast({
                 "type": "account",
                 "data": status,
@@ -234,6 +236,23 @@ async def account_status():
         status["uptime"] = int(time.time() - start_time)
         return status
     return {}
+
+
+@app.get("/api/positions")
+async def list_open_positions():
+    if paper:
+        return paper.get_open_positions()
+    return []
+
+
+@app.post("/api/close/{position_id}")
+async def close_position(position_id: str):
+    if paper:
+        result = await paper.close_position(position_id, client)
+        if result:
+            return {"status": "closed", "position_id": position_id, "result": result}
+        return {"status": "error", "message": "position not found or already closed"}
+    return {"status": "error", "message": "engine not running"}
 
 
 @app.get("/api/config")

@@ -53,7 +53,7 @@ tr:hover td{background:#1e293b}
 .badge.sell{background:#ef444433;color:#ef4444}
 .badge.apr{background:#eab30833;color:#eab308}
 .badge.auto{background:#22c55e33;color:#22c55e}
-.acct-card{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+.acct-card{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px}
 .acct-item{background:#1a2332;padding:8px;border-radius:4px;text-align:center}
 .acct-item .label{font-size:10px;color:#64748b;text-transform:uppercase}
 .acct-item .value{font-size:16px;font-weight:700;margin-top:2px}
@@ -87,7 +87,9 @@ tr:hover td{background:#1e293b}
     <h2>Account</h2>
     <div class="panel-body">
       <div class="acct-card" id="acctCard">
-        <div class="acct-item"><div class="label">Balance</div><div class="value blue" id="acctBalance">0.00</div></div>
+        <div class="acct-item"><div class="label">Avail</div><div class="value blue" id="acctBalance">0.00</div></div>
+        <div class="acct-item"><div class="label">Locked</div><div class="value" id="acctLocked" style="color:#eab308">0.00</div></div>
+        <div class="acct-item"><div class="label">Equity</div><div class="value" id="acctEquity" style="color:#22c55e">0.00</div></div>
         <div class="acct-item"><div class="label">P&amp;L</div><div class="value" id="acctPnl">0.00</div></div>
         <div class="acct-item"><div class="label">Return</div><div class="value" id="acctReturn">0.00%</div></div>
         <div class="acct-item"><div class="label">Positions</div><div class="value" id="acctPositions">0</div></div>
@@ -101,8 +103,10 @@ tr:hover td{background:#1e293b}
   <div class="panel" style="grid-column:1/-1;max-height:300px">
     <h2>Trade Log</h2>
     <div class="panel-body">
+      <h2 style="margin-top:4px;font-size:13px">Open Positions</h2>
+      <div id="openPositions" style="font-size:12px;margin-bottom:6px;color:#94a3b8"></div>
       <table>
-        <thead><tr><th>Time</th><th>Type</th><th>Symbol/Path</th><th>Side</th><th>Qty</th><th>Price</th><th>Notional</th><th>Fee</th><th>Net Profit</th><th>Details</th><th>Balance</th></tr></thead>
+        <thead><tr><th>Time</th><th>Event</th><th>Symbol/Path</th><th>Side</th><th>Notional</th><th>Amount</th><th>Details</th><th>Balance</th></tr></thead>
         <tbody id="tradeTable"></tbody>
       </table>
     </div>
@@ -233,6 +237,8 @@ function updateTickers(data) {
 
 function updateAccount(data) {
   document.getElementById('acctBalance').textContent = fmt(data.balance_usdt);
+  document.getElementById('acctLocked').textContent = fmt(data.locked_usdt || 0);
+  document.getElementById('acctEquity').textContent = fmt(data.total_equity || data.balance_usdt);
   const pnlEl = document.getElementById('acctPnl');
   pnlEl.textContent = fmt(data.total_pnl);
   pnlEl.className = 'value ' + (data.total_pnl >= 0 ? 'green' : 'red');
@@ -250,6 +256,24 @@ function updateAccount(data) {
   if (data.trade_size_pct !== undefined) {
     updateSizeUI(data.trade_size_pct);
   }
+
+  if (data.open_positions_list) {
+    let html = '';
+    for (const p of data.open_positions_list) {
+      html += `<span style="display:inline-block;background:#1a2332;padding:3px 8px;border-radius:4px;margin:2px 4px 2px 0;border-left:3px solid #f59e0b">
+        ${p.symbol} <span class="${p.side.includes('short')?'red':'green'}">${p.side.includes('short')?'SHORT':'LONG'}</span>
+        $${p.notional} Fund:$${p.funding_received}
+        <button onclick="closePosition('${p.id}')" style="background:transparent;border:1px solid #ef4444;color:#ef4444;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px;margin-left:4px">X</button>
+      </span>`;
+    }
+    document.getElementById('openPositions').innerHTML = html || '<span style="color:#64748b">No open positions</span>';
+  }
+}
+
+async function closePosition(id) {
+  try {
+    await fetch('/api/close/' + id, {method:'POST'});
+  } catch(e) { console.error(e); }
 }
 
 function updateAutoTradeUI(enabled) {
@@ -310,54 +334,70 @@ function addOpportunity(msg) {
 }
 
 function addTrade(data) {
-  tradeCount++;
-  document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
-
   const tbody = document.getElementById('tradeTable');
   const now = data.trade_time || new Date().toLocaleTimeString();
-  const type = data.type === 'funding' ? 'Funding Arb' : 'Triangular';
   const symbol = data.symbol || data.path || '-';
-  const pnl = data.net_profit_expected !== undefined ? data.net_profit_expected : 0;
-  const pnlCls = pnl >= 0 ? 'green' : 'red';
+  let row = '';
 
-  if (data.type === 'funding') {
+  if (data.event === 'position_opened') {
+    tradeCount++;
+    document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
     const sideLabel = data.action && data.action.includes('short') ? 'SHORT' : 'LONG';
-    const qty = data.notional && data.spot_price ? (data.notional / data.spot_price).toFixed(4) : '-';
-    const det = 'FR:' + (data.funding_rate*100).toFixed(4) + '% Basis:' + data.basis_pct + '% APR:' + data.expected_apr + '%';
-    const row = `<tr>
+    const nf = data.next_funding_time ? fmtCountdown(data.next_funding_time - Date.now()) : '-';
+    row = `<tr style="border-left:3px solid #f59e0b">
       <td style="color:#64748b">${now}</td>
-      <td><span class="badge" style="background:#f59e0b33;color:#f59e0b">${type}</span></td>
+      <td><span class="badge" style="background:#f59e0b33;color:#f59e0b">OPEN</span></td>
       <td><strong>${symbol}</strong></td>
       <td><span class="badge ${sideLabel === 'LONG' ? 'buy' : 'sell'}">${sideLabel}</span></td>
-      <td>${qty}</td>
-      <td>$${fmt(data.spot_price)}/${fmt(data.futures_price)}</td>
       <td>$${fmt(data.notional)}</td>
-      <td style="color:#ef4444">$${fmt(data.fee)}</td>
-      <td class="${pnlCls}">$${fmt(pnl)}</td>
-      <td style="color:#94a3b8;font-size:11px">${det}</td>
+      <td style="color:#ef4444">-$${fmt(data.fee)} fee</td>
+      <td style="color:#94a3b8;font-size:11px">FR:${(data.funding_rate*100).toFixed(4)}% APR:${data.expected_apr}% Next:${nf}</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
-    tbody.insertAdjacentHTML('afterbegin', row);
-  } else {
-    const qty = data.notional ? (data.notional / (data.legs && data.legs[0] && data.legs[0].price || 1)).toFixed(4) : '-';
-    const price = data.legs ? data.legs.map(l => '$' + fmt(l.price)).join(' → ') : '-';
-    const legsStr = data.legs ? data.legs.map(l => l.side + ' ' + l.symbol + ' @ $' + fmt(l.price)).join(' | ') : '-';
-    const row = `<tr>
+  } else if (data.event === 'funding_payment') {
+    const cls = data.amount >= 0 ? 'green' : 'red';
+    row = `<tr style="border-left:3px solid #22c55e">
       <td style="color:#64748b">${now}</td>
-      <td><span class="badge" style="background:#a78bfa33;color:#a78bfa">${type}</span></td>
+      <td><span class="badge" style="background:#22c55e33;color:#22c55e">FUNDING</span></td>
       <td><strong>${symbol}</strong></td>
-      <td colspan="2" style="font-size:11px;color:#94a3b8">${legsStr}</td>
-      <td>${price} →</td>
-      <td>$${fmt(data.notional)}</td>
-      <td style="color:#ef4444">$${fmt(data.fee)}</td>
-      <td class="${pnlCls}">$${fmt(pnl)} (${data.profit_pct || 0}%)</td>
-      <td style="color:#94a3b8;font-size:11px">Profit: ${data.profit_pct || 0}%</td>
+      <td>-</td>
+      <td>-</td>
+      <td class="${cls}">${data.amount >= 0 ? '+' : ''}$${fmt(data.amount)}</td>
+      <td style="color:#94a3b8;font-size:11px">Total received: $${fmt(data.total_received)}</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
-    tbody.insertAdjacentHTML('afterbegin', row);
+  } else if (data.event === 'position_closed') {
+    const cls = data.total_pnl >= 0 ? 'green' : 'red';
+    row = `<tr style="border-left:3px solid #ef4444">
+      <td style="color:#64748b">${now}</td>
+      <td><span class="badge" style="background:#ef444433;color:#ef4444">CLOSE</span></td>
+      <td><strong>${symbol}</strong></td>
+      <td>-</td>
+      <td>$${fmt(data.notional)}</td>
+      <td class="${cls}">${data.total_pnl >= 0 ? '+' : ''}$${fmt(data.total_pnl)}</td>
+      <td style="color:#94a3b8;font-size:11px">PnL:$${fmt(data.price_pnl)} Fund:$${fmt(data.funding_received)} Fees:$${fmt(data.fees)}</td>
+      <td class="blue">$${fmt(data.balance_remaining)}</td>
+    </tr>`;
+  } else if (data.event === 'trade_completed') {
+    tradeCount++;
+    document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
+    const legsStr = data.legs ? data.legs.map(l => l.side+' '+l.symbol+' @ $'+fmt(l.price)).join(' | ') : '';
+    row = `<tr style="border-left:3px solid #a78bfa">
+      <td style="color:#64748b">${now}</td>
+      <td><span class="badge" style="background:#a78bfa33;color:#a78bfa">TRIANGLE</span></td>
+      <td><strong>${symbol}</strong></td>
+      <td style="font-size:11px;color:#94a3b8" colspan="2">${legsStr}</td>
+      <td class="green">+$${fmt(data.net_profit)}</td>
+      <td style="color:#94a3b8;font-size:11px">${data.profit_pct}%</td>
+      <td class="blue">$${fmt(data.balance_remaining)}</td>
+    </tr>`;
   }
-  while (tbody.children.length > 100) {
-    tbody.removeChild(tbody.lastChild);
+
+  if (row) {
+    tbody.insertAdjacentHTML('afterbegin', row);
+    while (tbody.children.length > 200) {
+      tbody.removeChild(tbody.lastChild);
+    }
   }
 }
 
