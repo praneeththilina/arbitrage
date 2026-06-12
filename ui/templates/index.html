@@ -1749,6 +1749,16 @@ function addTrade(data) {
     document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
     const sideLabel = data.action && data.action.includes('short') ? 'SHORT' : 'LONG';
     const nf = data.next_funding_time ? fmtCountdown(data.next_funding_time - Date.now()) : '-';
+    
+    let detailsHtml = '';
+    if (data.type === 'basis') {
+      detailsHtml = `Basis: ${data.basis_pct}% | Net: ${data.net_basis_pct}% | Est. Profit: $${fmt(data.expected_profit)}`;
+    } else {
+      const fr = data.funding_rate !== undefined && data.funding_rate !== null ? (data.funding_rate*100).toFixed(4)+'%' : '-%';
+      const apr = data.expected_apr !== undefined && data.expected_apr !== null ? data.expected_apr+'%' : '-%';
+      detailsHtml = `FR: ${fr} | APR: ${apr} | Next: ${nf}`;
+    }
+
     row = `<tr style="border-left:3px solid var(--amber)">
       <td style="color:var(--text-muted)">${now}</td>
       <td><span class="badge" style="background:var(--amber-bg);color:var(--amber)">OPEN</span></td>
@@ -1756,7 +1766,7 @@ function addTrade(data) {
       <td><span class="badge ${sideLabel === 'LONG' ? 'badge-long' : 'badge-short'}">${sideLabel}</span></td>
       <td>$${fmt(data.notional)}</td>
       <td style="color:var(--red)">-$${fmt(data.fee)} fee</td>
-      <td style="color:var(--text-secondary);font-size:11px">FR:${(data.funding_rate*100).toFixed(4)}% | APR:${data.expected_apr}% | Next:${nf}</td>
+      <td style="color:var(--text-secondary);font-size:11px">${detailsHtml}</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
   } else if (data.event === 'funding_payment') {
