@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import logging
-from typing import Set, Dict, Any
+from typing import Set, Dict, Any, Optional
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -53,6 +53,32 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+def _task_active(task: Optional[asyncio.Task]) -> bool:
+    return task is not None and not task.done()
+
+
+def _strategy_status() -> Dict[str, Any]:
+    funding_running = bool(funding_strategy and funding_strategy.is_running)
+    triangular_running = bool(triangular_strategy and triangular_strategy.is_running)
+    return {
+        "funding": {
+            "available": funding_strategy is not None,
+            "running": funding_running,
+            "task_active": _task_active(_funding_task),
+        },
+        "triangular": {
+            "available": triangular_strategy is not None,
+            "running": triangular_running,
+            "task_active": _task_active(_triangular_task),
+            "paths": len(triangular_strategy.paths) if triangular_strategy else 0,
+        },
+    }
+
+
+def _cancel_task(task: Optional[asyncio.Task]) -> None:
+    if _task_active(task):
+        task.cancel()
+
 
 async def ticker_broadcaster():
     global client, engine, start_time, triangular_strategy
@@ -84,6 +110,7 @@ async def ticker_broadcaster():
                 status_data["uptime"] = int(now - start_time)
                 status_data["open_positions_list"] = engine.get_open_positions(client)
                 status_data["triangular_paths"] = len(triangular_strategy.paths) if triangular_strategy else 0
+                status_data["strategies"] = _strategy_status()
                 
                 await manager.broadcast({
                     "type": "account",
@@ -238,31 +265,42 @@ async def get_dashboard(request: Request):
 @app.get("/api/status")
 async def get_status():
     if engine:
-        return await engine.get_status()
-    return {"status": "error", "message": "Engine not initialized"}
+        status = await engine.get_status()
+        status["strategies"] = _strategy_status()
+        return status
+    return {"status": "error", "message": "Engine not initialized", "strategies": _strategy_status()}
 
 
 @app.post("/api/start/{strategy}")
 async def start_strategy(strategy: str):
     global _funding_task, _triangular_task
     if strategy == "funding" and funding_strategy:
+        if funding_strategy.is_running or _task_active(_funding_task):
+            return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
         _funding_task = asyncio.create_task(funding_strategy.start())
-        return {"status": "started", "strategy": strategy}
+        return {"status": "started", "strategy": strategy, "strategies": _strategy_status()}
     elif strategy == "triangular" and triangular_strategy:
+        if triangular_strategy.is_running or _task_active(_triangular_task):
+            return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
         _triangular_task = asyncio.create_task(triangular_strategy.start())
-        return {"status": "started", "strategy": strategy}
-    return {"status": "error", "message": "unknown strategy"}
+        return {"status": "started", "strategy": strategy, "strategies": _strategy_status()}
+    return {"status": "error", "message": "unknown strategy", "strategies": _strategy_status()}
 
 
 @app.post("/api/stop/{strategy}")
 async def stop_strategy(strategy: str):
+    global _funding_task, _triangular_task
     if strategy == "funding" and funding_strategy:
         funding_strategy.stop()
-        return {"status": "stopped", "strategy": strategy}
+        _cancel_task(_funding_task)
+        _funding_task = None
+        return {"status": "stopped", "strategy": strategy, "strategies": _strategy_status()}
     elif strategy == "triangular" and triangular_strategy:
         triangular_strategy.stop()
-        return {"status": "stopped", "strategy": strategy}
-    return {"status": "error", "message": "unknown strategy"}
+        _cancel_task(_triangular_task)
+        _triangular_task = None
+        return {"status": "stopped", "strategy": strategy, "strategies": _strategy_status()}
+    return {"status": "error", "message": "unknown strategy", "strategies": _strategy_status()}
 
 
 @app.post("/api/close/{position_id}")

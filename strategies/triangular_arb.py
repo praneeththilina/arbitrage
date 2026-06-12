@@ -33,13 +33,17 @@ class TriangularArbitrage:
         self._on_opportunity: Optional[Callable] = None
         self.paths: List[TrianglePath] = []
 
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
     def on_opportunity(self, cb: Callable):
         self._on_opportunity = cb
 
     def resolve_dynamic_paths(self, top_usdt_symbols: List[str], exchange_info: Dict[str, Dict]):
         self.paths = []
         base_assets = []
-        
+
         for sym in top_usdt_symbols:
             info = exchange_info.get(sym)
             if info and info["quote"] == "USDT":
@@ -49,12 +53,12 @@ class TriangularArbitrage:
             for j in range(i + 1, len(base_assets)):
                 base1 = base_assets[i]
                 base2 = base_assets[j]
-                
+
                 cross_a = f"{base1}{base2}"
                 cross_b = f"{base2}{base1}"
-                
+
                 cross = cross_a if cross_a in exchange_info else (cross_b if cross_b in exchange_info else None)
-                
+
                 if not cross:
                     continue
 
@@ -78,21 +82,30 @@ class TriangularArbitrage:
         logger.info(f"Resolved {len(self.paths)} dynamic triangle paths")
 
     async def start(self):
+        if self._running:
+            logger.info("Triangular arbitrage scanner is already running")
+            return
+
         self._running = True
-        while self._running:
-            ops = []
-            for path in self.paths:
-                op = self._evaluate_path(path)
-                if op:
-                    ops.append(op)
-            
-            # Sort by profit and broadcast the top 5 closest to profitability
-            ops.sort(key=lambda x: x.profit_pct, reverse=True)
-            for op in ops[:5]:
-                if self._on_opportunity:
-                    asyncio.create_task(self._on_opportunity(op))
-                    
-            await asyncio.sleep(settings.update_interval_ms / 1000)
+        logger.info("Triangular arbitrage scanner started")
+        try:
+            while self._running:
+                ops = []
+                for path in self.paths:
+                    op = self._evaluate_path(path)
+                    if op:
+                        ops.append(op)
+
+                # Sort by profit and broadcast the top 5 closest to profitability
+                ops.sort(key=lambda x: x.profit_pct, reverse=True)
+                for op in ops[:5]:
+                    if self._on_opportunity:
+                        asyncio.create_task(self._on_opportunity(op))
+
+                await asyncio.sleep(settings.update_interval_ms / 1000)
+        finally:
+            self._running = False
+            logger.info("Triangular arbitrage scanner stopped")
 
     def stop(self):
         self._running = False

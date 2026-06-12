@@ -1222,6 +1222,7 @@ function connect() {
     document.getElementById('wsDot').className = 'dot-indicator green';
     document.getElementById('wsStatus').textContent = 'Connected';
     reconnectDelay = 1000;
+    loadInitialStatus();
     pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         pingTime = Date.now();
@@ -1495,7 +1496,11 @@ function updateAccount(data) {
   if (data.triangular_paths !== undefined) {
     document.getElementById('triPaths').textContent = 'Monitoring ' + data.triangular_paths + ' triangle paths';
   }
-  
+
+  if (data.strategies) {
+    updateStrategyUI(data.strategies);
+  }
+
   const pnlEl = document.getElementById('acctPnl');
   pnlEl.textContent = fmt(data.total_return);
   pnlEl.className = 'kpi-val ' + (data.total_return >= 0 ? 'green' : 'red');
@@ -1749,23 +1754,61 @@ function addTrade(data) {
   }
 }
 
-async function toggleStrategy(strategy, action) {
+function setStrategyButtons(strategy, running, available = true) {
+  const startBtn = document.getElementById(strategy + 'Start');
+  const stopBtn = document.getElementById(strategy + 'Stop');
+  if (!startBtn || !stopBtn) return;
+
+  startBtn.style.display = running ? 'none' : 'block';
+  stopBtn.style.display = running ? 'block' : 'none';
+  startBtn.disabled = !available;
+  stopBtn.disabled = !available;
+}
+
+function updateStrategyUI(strategies) {
+  for (const strategy of ['funding', 'triangular']) {
+    const status = strategies[strategy];
+    if (!status) continue;
+    setStrategyButtons(strategy, Boolean(status.running || status.task_active), status.available !== false);
+  }
+}
+
+async function loadInitialStatus() {
   try {
-    const resp = await fetch(`/api/${action}/${strategy}`, {method:'POST'});
+    const resp = await fetch('/api/status');
     const result = await resp.json();
-    if (result.status === 'started' || result.status === 'stopped') {
-      const startBtn = document.getElementById(strategy + 'Start');
-      const stopBtn = document.getElementById(strategy + 'Stop');
-      if (action === 'start') {
-        startBtn.style.display = 'none';
-        stopBtn.style.display = 'block';
-      } else {
-        startBtn.style.display = 'block';
-        stopBtn.style.display = 'none';
-      }
+    if (result.strategies) {
+      updateStrategyUI(result.strategies);
     }
   } catch(e) {
     console.error(e);
+  }
+}
+
+async function toggleStrategy(strategy, action) {
+  const startBtn = document.getElementById(strategy + 'Start');
+  const stopBtn = document.getElementById(strategy + 'Stop');
+  const activeBtn = action === 'start' ? startBtn : stopBtn;
+
+  let updatedFromServer = false;
+  if (activeBtn) activeBtn.disabled = true;
+  try {
+    const resp = await fetch(`/api/${action}/${strategy}`, {method:'POST'});
+    const result = await resp.json();
+    if (result.strategies) {
+      updateStrategyUI(result.strategies);
+      updatedFromServer = true;
+    } else if (result.status === 'started' || result.status === 'already_running') {
+      setStrategyButtons(strategy, true);
+      updatedFromServer = true;
+    } else if (result.status === 'stopped') {
+      setStrategyButtons(strategy, false);
+      updatedFromServer = true;
+    }
+  } catch(e) {
+    console.error(e);
+  } finally {
+    if (activeBtn && !updatedFromServer) activeBtn.disabled = false;
   }
 }
 </script>

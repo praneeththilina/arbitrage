@@ -26,23 +26,36 @@ class FundingArbitrage:
         self._running = False
         self._on_opportunity: Optional[Callable] = None
 
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
     def on_opportunity(self, cb: Callable):
         self._on_opportunity = cb
 
     async def start(self):
+        if self._running:
+            logger.info("Funding arbitrage scanner is already running")
+            return
+
         self._running = True
-        while self._running:
-            ops = []
-            for sym, t in list(self.client.tickers.items()):
-                op = self._evaluate(sym, t)
-                if op:
-                    ops.append(op)
-            
-            ops.sort(key=lambda x: x.expected_apr, reverse=True)
-            for op in ops[:5]:
-                if self._on_opportunity:
-                    asyncio.create_task(self._on_opportunity(op))
-            await asyncio.sleep(settings.update_interval_ms / 1000)
+        logger.info("Funding arbitrage scanner started")
+        try:
+            while self._running:
+                ops = []
+                for sym, t in list(self.client.tickers.items()):
+                    op = self._evaluate(sym, t)
+                    if op:
+                        ops.append(op)
+
+                ops.sort(key=lambda x: x.expected_apr, reverse=True)
+                for op in ops[:5]:
+                    if self._on_opportunity:
+                        asyncio.create_task(self._on_opportunity(op))
+                await asyncio.sleep(settings.update_interval_ms / 1000)
+        finally:
+            self._running = False
+            logger.info("Funding arbitrage scanner stopped")
 
     def stop(self):
         self._running = False
@@ -58,7 +71,7 @@ class FundingArbitrage:
 
         spot_ask = t.ask if t.ask > 0 else t.spot_price
         spot_bid = t.bid if t.bid > 0 else t.spot_price
-        
+
         futures_fee_rate = 0.0005
         spot_fee_rate = settings.taker_fee
         total_friction_pct = (spot_fee_rate + futures_fee_rate) * 200
@@ -73,7 +86,7 @@ class FundingArbitrage:
             net_basis = raw_basis - total_friction_pct
 
         # Removed hard filters to allow visualization of top opportunities
-        
+
         funding_per_day = abs_fr * 3
         expected_apr = funding_per_day * 365 * 100
 
