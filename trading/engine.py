@@ -171,6 +171,11 @@ class PaperEngine:
             result["reason"] = "max concurrent positions reached"
             return result
 
+        for p in self.positions.values():
+            if p.symbol == op.symbol and p.status == "open":
+                result["reason"] = "position already open for this symbol"
+                return result
+
         cooldown_key = f"funding_{op.symbol}"
         if self._is_on_cooldown(cooldown_key):
             result["reason"] = "on cooldown"
