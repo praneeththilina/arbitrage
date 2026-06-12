@@ -192,23 +192,22 @@ class PaperEngine:
     def validate_triangular_op(self, op) -> Dict:
         result = {"valid": False, "reason": "", "net_profit": 0.0, "pos_size": 0.0}
 
-        pos_size = self._get_position_size() * 0.5
+        pos_size = min(self._get_position_size(), settings.max_position_size_usdt) * 0.5
         if pos_size <= 0:
             result["reason"] = "zero balance"
             return result
 
-        pos_size = min(pos_size, settings.max_position_size_usdt * 0.5)
-
+        tri_fee_rate = 0.0004
         total_fees = 0
         for leg in op.legs:
-            leg_notional = pos_size if leg == op.legs[0] else pos_size * 0.5
-            total_fees += self._calculate_fee(leg_notional)
+            leg_notional = pos_size
+            total_fees += leg_notional * tri_fee_rate
 
         net_profit_pct = op.profit_pct - (total_fees / pos_size * 100)
         net_profit_usdt = pos_size * (net_profit_pct / 100)
 
-        if net_profit_usdt < settings.min_net_profit_usdt:
-            result["reason"] = f"net profit ${net_profit_usdt:.2f} < min ${settings.min_net_profit_usdt:.2f}"
+        if net_profit_usdt < 0.01:
+            result["reason"] = f"net profit ${net_profit_usdt:.2f} too small"
             return result
 
         if len(self.positions) >= settings.max_concurrent_positions:
