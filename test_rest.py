@@ -2,7 +2,7 @@ import aiohttp
 import asyncio
 import json
 
-async def test_rest():
+async def check_rest():
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get("https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT") as resp:
@@ -12,4 +12,5 @@ async def test_rest():
     except Exception as e:
         print("REST Error:", e)
 
-asyncio.run(test_rest())
+if __name__ == "__main__":
+    asyncio.run(check_rest())
