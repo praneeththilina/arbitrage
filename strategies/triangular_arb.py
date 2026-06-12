@@ -21,7 +21,7 @@ TRIANGLE_TEMPLATES = [
     ("USDT", "BNB", "SOL"),
 ]
 
-MIN_TRIANGULAR_SPREAD_PCT = 0.01
+MIN_NET_PROFIT_PCT = 0.01
 
 
 @dataclass
@@ -66,8 +66,8 @@ class TriangularArbitrage:
             cross_a = f"{base1}{base2}"
             cross_b = f"{base2}{base1}"
             cross = cross_a if cross_a in spot_symbols else (cross_b if cross_b in spot_symbols else None)
+            
             if not cross:
-                logger.debug(f"No cross pair for {base1}/{base2}, skipping")
                 continue
 
             if cross == cross_a:
@@ -96,7 +96,7 @@ class TriangularArbitrage:
                 cross_symbol=cross,
             ))
 
-        logger.info(f"Resolved {len(self.paths)} triangle paths from {len(TRIANGLE_TEMPLATES)} templates")
+        logger.info(f"Resolved {len(self.paths)} triangle paths")
 
     async def start(self):
         self._running = True
@@ -129,11 +129,14 @@ class TriangularArbitrage:
 
         rate = 1.0
         leg_details = []
+        fee_multiplier = 1.0 - settings.taker_fee
+
         for i, (sym, side, desc) in enumerate(path.legs):
             if side == "BUY":
-                rate /= prices[i]
+                rate = (rate / prices[i]) * fee_multiplier
             else:
-                rate *= prices[i]
+                rate = (rate * prices[i]) * fee_multiplier
+                
             leg_details.append({
                 "symbol": sym,
                 "side": side,
@@ -143,13 +146,11 @@ class TriangularArbitrage:
 
         profit_pct = (rate - 1.0) * 100
 
-        if profit_pct <= MIN_TRIANGULAR_SPREAD_PCT:
-            if profit_pct > -0.5:
-                logger.debug(f"Tri path {path.description}: rate={rate:.6f} profit={profit_pct:.4f}% (below {MIN_TRIANGULAR_SPREAD_PCT}%)")
+        if profit_pct <= MIN_NET_PROFIT_PCT:
             return None
 
-        confidence = min(profit_pct / 10, 0.95)
-        logger.info(f"Triangular opportunity: {path.description} profit={profit_pct:.4f}% rate={rate:.6f}")
+        confidence = min(profit_pct / 2, 0.95)
+        logger.info(f"Net triangular opportunity found: {path.description} profit={profit_pct:.4f}% rate={rate:.6f}")
 
         return TriangularOpportunity(
             symbol_a=path.legs[0][0],
@@ -162,6 +163,7 @@ class TriangularArbitrage:
             confidence=confidence,
             details={
                 "prices": prices,
-                "rate": rate,
+                "gross_rate": rate / (fee_multiplier ** 3),
+                "net_rate": rate,
             },
         )

@@ -1,6 +1,5 @@
 import asyncio
-import math
-from typing import Dict, Optional, Callable, Awaitable
+from typing import Optional, Callable
 from dataclasses import dataclass, field
 
 from config import settings
@@ -12,6 +11,7 @@ class FundingOpportunity:
     symbol: str
     funding_rate: float
     basis_pct: float
+    net_basis_pct: float
     spot_price: float
     futures_price: float
     action: str
@@ -46,22 +46,32 @@ class FundingArbitrage:
         if t.spot_price <= 0 or t.futures_price <= 0:
             return None
 
-        basis = ((t.futures_price - t.spot_price) / t.spot_price) * 100
         fr = t.funding_rate
         abs_fr = abs(fr)
 
         if abs_fr < settings.min_funding_rate_abs:
             return None
 
-        if abs(basis) < settings.min_spread_pct:
-            return None
+        spot_ask = t.ask if t.ask > 0 else t.spot_price
+        spot_bid = t.bid if t.bid > 0 else t.spot_price
+        
+        futures_fee_rate = 0.0005
+        spot_fee_rate = 0.001
+        total_friction_pct = (spot_fee_rate + futures_fee_rate) * 200
 
         if fr > 0:
             action = "short_perp_long_spot"
+            raw_basis = ((t.futures_price - spot_ask) / spot_ask) * 100
+            net_basis = raw_basis - total_friction_pct
         else:
             action = "long_perp_short_spot"
+            raw_basis = ((spot_bid - t.futures_price) / t.futures_price) * 100
+            net_basis = raw_basis - total_friction_pct
 
-        funding_per_day = abs(fr) * 3
+        if abs(raw_basis) < settings.min_spread_pct:
+            return None
+
+        funding_per_day = abs_fr * 3
         expected_apr = funding_per_day * 365 * 100
 
         funding_pos = "longs_pay" if fr > 0 else "shorts_pay"
@@ -70,7 +80,8 @@ class FundingArbitrage:
         details = {
             "funding_rate": fr,
             "funding_positions": funding_pos,
-            "basis_pct": round(basis, 4),
+            "raw_basis_pct": round(raw_basis, 4),
+            "net_basis_pct": round(net_basis, 4),
             "action": action,
             "next_funding_time": t.next_funding_time,
             "spot_volume_24h": t.spot_volume_24h,
@@ -79,7 +90,8 @@ class FundingArbitrage:
         return FundingOpportunity(
             symbol=symbol,
             funding_rate=fr,
-            basis_pct=basis,
+            basis_pct=raw_basis,
+            net_basis_pct=net_basis,
             spot_price=t.spot_price,
             futures_price=t.futures_price,
             action=action,
