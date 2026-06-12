@@ -2,6 +2,7 @@ import asyncio
 
 from config import settings
 from strategies.funding_arb import FundingArbitrage
+from strategies.basis_arb import BasisArbitrage
 from strategies.triangular_arb import TriangularArbitrage
 from ui import server
 
@@ -35,6 +36,10 @@ def test_funding_scanner_ignores_duplicate_starts_and_stops_cleanly():
 
 def test_triangular_scanner_ignores_duplicate_starts_and_stops_cleanly():
     asyncio.run(_run_scanner_once(TriangularArbitrage(DummyClient())))
+
+
+def test_basis_scanner_ignores_duplicate_starts_and_stops_cleanly():
+    asyncio.run(_run_scanner_once(BasisArbitrage(DummyClient())))
 
 
 class FakeStrategy:
