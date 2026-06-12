@@ -144,9 +144,12 @@ class TriangularArbitrage:
         profit_pct = (rate - 1.0) * 100
 
         if profit_pct <= MIN_TRIANGULAR_SPREAD_PCT:
+            if profit_pct > -0.5:
+                logger.debug(f"Tri path {path.description}: rate={rate:.6f} profit={profit_pct:.4f}% (below {MIN_TRIANGULAR_SPREAD_PCT}%)")
             return None
 
         confidence = min(profit_pct / 10, 0.95)
+        logger.info(f"Triangular opportunity: {path.description} profit={profit_pct:.4f}% rate={rate:.6f}")
 
         return TriangularOpportunity(
             symbol_a=path.legs[0][0],

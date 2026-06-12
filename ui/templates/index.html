@@ -83,9 +83,8 @@ tr:hover td{background:#1e293b}
     </div>
   </div>
 
-  <div class="panel" style="grid-row:2">
-    <h2>Account</h2>
-    <div class="panel-body">
+  <div class="panel" style="grid-row:2;padding:0">
+    <div style="flex:1;overflow-y:auto;padding:10px 10px 4px 10px">
       <div class="acct-card" id="acctCard">
         <div class="acct-item"><div class="label">Avail</div><div class="value blue" id="acctBalance">0.00</div></div>
         <div class="acct-item"><div class="label">Locked</div><div class="value" id="acctLocked" style="color:#eab308">0.00</div></div>
@@ -95,8 +94,13 @@ tr:hover td{background:#1e293b}
         <div class="acct-item"><div class="label">Positions</div><div class="value" id="acctPositions">0</div></div>
       </div>
       <div class="trade-count" id="tradeCount">0 trades executed</div>
-      <h2 style="margin-top:8px">Opportunities</h2>
-      <div id="opportunities"></div>
+      <h2 style="margin-top:6px;font-size:13px">Funding Opportunities</h2>
+      <div id="fundingOpps" style="font-size:12px"></div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:4px 10px 10px 10px;border-top:1px solid #1e293b">
+      <h2 style="font-size:13px">Triangular Opportunities</h2>
+      <div id="triangularOpps" style="font-size:12px"></div>
+      <div id="triPaths" style="margin-top:4px;font-size:11px;color:#64748b"></div>
     </div>
   </div>
 
@@ -239,6 +243,9 @@ function updateAccount(data) {
   document.getElementById('acctBalance').textContent = fmt(data.balance_usdt);
   document.getElementById('acctLocked').textContent = fmt(data.locked_usdt || 0);
   document.getElementById('acctEquity').textContent = fmt(data.total_equity || data.balance_usdt);
+  if (data.triangular_paths !== undefined) {
+    document.getElementById('triPaths').textContent = 'Monitoring ' + data.triangular_paths + ' triangle paths';
+  }
   const pnlEl = document.getElementById('acctPnl');
   pnlEl.textContent = fmt(data.total_pnl);
   pnlEl.className = 'value ' + (data.total_pnl >= 0 ? 'green' : 'red');
@@ -299,9 +306,11 @@ function updateTradeSize(val) {
 }
 
 function addOpportunity(msg) {
-  const container = document.getElementById('opportunities');
   const strat = msg.strategy;
   const d = msg.data;
+  const id = strat === 'funding' ? 'fundingOpps' : 'triangularOpps';
+  const container = document.getElementById(id);
+  if (!container) return;
   let html = '';
 
   if (strat === 'funding') {

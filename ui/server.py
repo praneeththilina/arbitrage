@@ -200,6 +200,7 @@ async def ticker_broadcaster():
             status = await paper.get_status()
             status["uptime"] = int(now - start_time)
             status["open_positions_list"] = paper.get_open_positions()
+            status["triangular_paths"] = len(triangular_strategy.paths) if triangular_strategy else 0
             await manager.broadcast({
                 "type": "account",
                 "data": status,
