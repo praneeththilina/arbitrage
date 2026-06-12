@@ -14,6 +14,7 @@ from exchange.client import BinanceClient
 from strategies.funding_arb import FundingArbitrage
 from strategies.triangular_arb import TriangularArbitrage
 from trading.engine import PaperEngine
+from trading.live_engine import LiveEngine
 from database import init_db
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 client: BinanceClient = None
 funding_strategy: FundingArbitrage = None
 triangular_strategy: TriangularArbitrage = None
-paper: PaperEngine = None
+engine = None
 start_time: float = 0
 _funding_task: asyncio.Task = None
 _triangular_task: asyncio.Task = None
@@ -42,7 +43,7 @@ class ConnectionManager:
 
     async def broadcast(self, data: dict):
         dead = set()
-        for ws in self.active:
+        for ws in list(self.active):
             try:
                 await ws.send_json(data)
             except Exception:
@@ -54,11 +55,11 @@ manager = ConnectionManager()
 
 
 async def ticker_broadcaster():
-    global client, paper, start_time, triangular_strategy
+    global client, engine, start_time, triangular_strategy
     while True:
         try:
             now = time.time()
-            if client and paper:
+            if client and engine:
                 tickers_data = {}
                 
                 for sym, t in list(client.tickers.items())[:settings.max_symbols]:
@@ -79,9 +80,9 @@ async def ticker_broadcaster():
                     "data": tickers_data
                 })
 
-                status_data = await paper.get_status()
+                status_data = await engine.get_status()
                 status_data["uptime"] = int(now - start_time)
-                status_data["open_positions_list"] = paper.get_open_positions(client)
+                status_data["open_positions_list"] = engine.get_open_positions(client)
                 status_data["triangular_paths"] = len(triangular_strategy.paths) if triangular_strategy else 0
                 
                 await manager.broadcast({
@@ -97,7 +98,7 @@ async def ticker_broadcaster():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client, funding_strategy, triangular_strategy, paper, start_time
+    global client, funding_strategy, triangular_strategy, engine, start_time
     await init_db()
     
     start_time = time.time()
@@ -114,9 +115,15 @@ async def lifespan(app: FastAPI):
 
     spot_exchange = await client.get_exchange_info()
 
-    paper = PaperEngine()
-    paper.set_client(client)
-    await paper.start()
+    if settings.trading_mode == "live":
+        logger.info("Initializing LIVE Engine")
+        engine = LiveEngine()
+    else:
+        logger.info("Initializing PAPER Engine")
+        engine = PaperEngine()
+        
+    engine.set_client(client)
+    await engine.start()
 
     funding_strategy = FundingArbitrage(client)
     
@@ -134,10 +141,10 @@ async def lifespan(app: FastAPI):
             db_op_id = None
 
         rejection_reason = None
-        validation = paper.validate_funding_op(op)
+        validation = engine.validate_funding_op(op)
         if not validation["valid"]:
             rejection_reason = validation["reason"]
-        elif not paper._auto_trade:
+        elif not engine._auto_trade:
             rejection_reason = "auto-trade disabled"
 
         await manager.broadcast({
@@ -158,7 +165,7 @@ async def lifespan(app: FastAPI):
             }
         })
 
-        trade = await paper.evaluate_and_execute("funding", op)
+        trade = await engine.evaluate_and_execute("funding", op)
         if trade:
             logger.info(f"Funding arb executed: {op.symbol} ${trade['notional']}")
 
@@ -171,10 +178,10 @@ async def lifespan(app: FastAPI):
             db_op_id = None
 
         rejection_reason = None
-        validation = paper.validate_triangular_op(op)
+        validation = engine.validate_triangular_op(op)
         if not validation["valid"]:
             rejection_reason = validation["reason"]
-        elif not paper._auto_trade:
+        elif not engine._auto_trade:
             rejection_reason = "auto-trade disabled"
 
         await manager.broadcast({
@@ -191,7 +198,7 @@ async def lifespan(app: FastAPI):
             }
         })
 
-        trade = await paper.evaluate_and_execute("triangular", op)
+        trade = await engine.evaluate_and_execute("triangular", op)
         if trade:
             logger.info(f"Triangular arb executed: {op.path} ${trade['notional']}")
 
@@ -200,7 +207,7 @@ async def lifespan(app: FastAPI):
 
     funding_strategy.on_opportunity(on_funding_op)
     triangular_strategy.on_opportunity(on_triangular_op)
-    paper.on_trade(on_trade)
+    engine.on_trade(on_trade)
 
     asyncio.create_task(client.start(symbols, list(cross_symbols)))
     asyncio.create_task(ticker_broadcaster())
@@ -211,8 +218,8 @@ async def lifespan(app: FastAPI):
         funding_strategy.stop()
     if triangular_strategy:
         triangular_strategy.stop()
-    if paper:
-        paper.stop()
+    if engine:
+        engine.stop()
     if client:
         await client.stop()
 
@@ -230,8 +237,8 @@ async def get_dashboard(request: Request):
 
 @app.get("/api/status")
 async def get_status():
-    if paper:
-        return await paper.get_status()
+    if engine:
+        return await engine.get_status()
     return {"status": "error", "message": "Engine not initialized"}
 
 
@@ -258,6 +265,16 @@ async def stop_strategy(strategy: str):
     return {"status": "error", "message": "unknown strategy"}
 
 
+@app.post("/api/close/{position_id}")
+async def close_position(position_id: str):
+    if engine:
+        result = await engine.close_position(position_id, client=client)
+        if result:
+            return {"status": "closed", "position_id": position_id, "result": result}
+        return {"status": "error", "message": "position not found or already closed"}
+    return {"status": "error", "message": "engine not initialized"}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
@@ -273,15 +290,15 @@ async def websocket_endpoint(ws: WebSocket):
 
                 elif action == "set_auto_trade":
                     val = msg.get("value", False)
-                    if paper:
-                        paper.auto_trade = bool(val)
-                        logger.info(f"auto_trade -> {paper.auto_trade}")
+                    if engine:
+                        engine.auto_trade = bool(val)
+                        logger.info(f"auto_trade -> {engine.auto_trade}")
                     await ws.send_json({"type": "config_ack", "auto_trade": bool(val)})
 
                 elif action == "set_trade_size":
                     pct = float(msg.get("value", 10))
-                    if paper:
-                        paper.trade_size_pct = pct
+                    if engine:
+                        engine.trade_size_pct = pct
                     await ws.send_json({"type": "config_ack", "trade_size_pct": pct})
 
             except json.JSONDecodeError:

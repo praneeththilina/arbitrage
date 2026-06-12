@@ -80,10 +80,18 @@ class TriangularArbitrage:
     async def start(self):
         self._running = True
         while self._running:
+            ops = []
             for path in self.paths:
                 op = self._evaluate_path(path)
-                if op and self._on_opportunity:
+                if op:
+                    ops.append(op)
+            
+            # Sort by profit and broadcast the top 5 closest to profitability
+            ops.sort(key=lambda x: x.profit_pct, reverse=True)
+            for op in ops[:5]:
+                if self._on_opportunity:
                     asyncio.create_task(self._on_opportunity(op))
+                    
             await asyncio.sleep(settings.update_interval_ms / 1000)
 
     def stop(self):
@@ -113,9 +121,7 @@ class TriangularArbitrage:
 
         profit_pct = (rate - 1.0) * 100
 
-        if profit_pct <= MIN_NET_PROFIT_PCT:
-            return None
-
+        # Don't hard-filter out unprofitable ones so they can be shown on the dashboard
         return TriangularOpportunity(
             symbol_a=path.legs[0][0],
             symbol_b=path.legs[1][0],
@@ -124,6 +130,6 @@ class TriangularArbitrage:
             effective_rate=rate,
             profit_pct=profit_pct,
             legs=leg_details,
-            confidence=min(profit_pct / 2, 0.95),
+            confidence=max(0.0, min(profit_pct / 2, 0.95)),
             details={"prices": prices, "net_rate": rate},
         )

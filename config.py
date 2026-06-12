@@ -6,8 +6,11 @@ class Settings(BaseSettings):
     binance_api_key: str = ""
     binance_secret_key: str = ""
 
-    min_volume_24h_usdt: float = 10_000_000
-    max_symbols: int = 30
+    trading_mode: str = "paper"  # "paper" or "live"
+    testnet: bool = False  # use binance testnet
+
+    min_volume_24h_usdt: float = 1_000_000
+    max_symbols: int = 100
     min_spread_pct: float = 0.001
     min_funding_rate_abs: float = 0.00001
 

@@ -32,9 +32,15 @@ class FundingArbitrage:
     async def start(self):
         self._running = True
         while self._running:
+            ops = []
             for sym, t in list(self.client.tickers.items()):
                 op = self._evaluate(sym, t)
-                if op and self._on_opportunity:
+                if op:
+                    ops.append(op)
+            
+            ops.sort(key=lambda x: x.expected_apr, reverse=True)
+            for op in ops[:5]:
+                if self._on_opportunity:
                     asyncio.create_task(self._on_opportunity(op))
             await asyncio.sleep(settings.update_interval_ms / 1000)
 
@@ -48,8 +54,7 @@ class FundingArbitrage:
         fr = t.funding_rate
         abs_fr = abs(fr)
 
-        if abs_fr < settings.min_funding_rate_abs:
-            return None
+        # Removed funding rate filter for visualization
 
         spot_ask = t.ask if t.ask > 0 else t.spot_price
         spot_bid = t.bid if t.bid > 0 else t.spot_price
@@ -67,14 +72,13 @@ class FundingArbitrage:
             raw_basis = ((spot_bid - t.futures_price) / t.futures_price) * 100
             net_basis = raw_basis - total_friction_pct
 
-        if abs(raw_basis) < settings.min_spread_pct:
-            return None
-
+        # Removed hard filters to allow visualization of top opportunities
+        
         funding_per_day = abs_fr * 3
         expected_apr = funding_per_day * 365 * 100
 
         funding_pos = "longs_pay" if fr > 0 else "shorts_pay"
-        confidence = min(abs_fr * 500, 0.95)
+        confidence = max(0.0, min(abs_fr * 500, 0.95))
 
         details = {
             "funding_rate": fr,

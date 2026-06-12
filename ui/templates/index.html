@@ -2,140 +2,1202 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Arbitrage Dashboard</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0e17;color:#e0e6f0;height:100vh;overflow:hidden}
-.app{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr auto;height:100vh;gap:8px;padding:8px}
-.header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:#111827;border-radius:8px}
-.header h1{font-size:18px;color:#60a5fa}
-.header .status{display:flex;gap:16px;font-size:13px;flex-wrap:wrap}
-.status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
-.dot.green{background:#22c55e;box-shadow:0 0 6px #22c55e}
-.dot.yellow{background:#eab308;box-shadow:0 0 6px #eab308}
-.dot.red{background:#ef4444;box-shadow:0 0 6px #ef4444}
-.panel{background:#111827;border-radius:8px;padding:10px;overflow:hidden;display:flex;flex-direction:column}
-.panel h2{font-size:14px;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
-.panel-body{flex:1;overflow-y:auto;font-size:13px}
-.panel-body::-webkit-scrollbar{width:4px}
-.panel-body::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
-table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:6px 8px;font-size:11px;color:#64748b;text-transform:uppercase;position:sticky;top:0;background:#111827;z-index:1}
-td{padding:4px 8px;border-top:1px solid #1e293b;white-space:nowrap;font-variant-numeric:tabular-nums}
-tr:hover td{background:#1e293b}
-.price{font-weight:600}
-.green{color:#22c55e}
-.red{color:#ef4444}
-.yellow{color:#eab308}
-.blue{color:#60a5fa}
-.opportunity{border-left:3px solid #60a5fa;margin:4px 0;padding:8px;background:#1a2332;border-radius:4px;font-size:12px}
-.opportunity.funding{border-color:#eab308}
-.opportunity.triangular{border-color:#a78bfa}
-.opportunity .title{font-weight:600;margin-bottom:4px}
-.opportunity .detail{display:flex;gap:12px;color:#94a3b8;flex-wrap:wrap}
-.opportunity .detail span{white-space:nowrap}
-.opportunity .reject-reason{margin-top:4px;color:#ef4444;font-size:11px}
-.controls{grid-column:1/-1;display:flex;gap:8px;padding:6px 16px;background:#111827;border-radius:8px;align-items:center;flex-wrap:wrap}
-.controls button{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s}
-.controls button:hover{opacity:.8}
-.controls label{font-size:12px;color:#94a3b8}
-.controls input[type=range]{width:100px;height:4px;-webkit-appearance:none;background:#334155;border-radius:2px;outline:none}
-.controls input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#60a5fa;cursor:pointer}
-.controls .size-val{color:#60a5fa;font-weight:700;font-size:13px;min-width:40px;text-align:center}
-.btn-start{background:#22c55e;color:#0a0e17}
-.btn-stop{background:#ef4444;color:#fff}
-.btn-auto-on{background:#22c55e;color:#0a0e17}
-.btn-auto-off{background:#334155;color:#e0e6f0}
-.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
-.badge.buy{background:#22c55e33;color:#22c55e}
-.badge.sell{background:#ef444433;color:#ef4444}
-.badge.apr{background:#eab30833;color:#eab308}
-.badge.auto{background:#22c55e33;color:#22c55e}
-.acct-card{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px}
-.acct-item{background:#1a2332;padding:8px;border-radius:4px;text-align:center}
-.acct-item .label{font-size:10px;color:#64748b;text-transform:uppercase}
-.acct-item .value{font-size:16px;font-weight:700;margin-top:2px}
-.trade-count{margin-top:8px;text-align:center;font-size:12px;color:#64748b}
-@media(max-width:1024px){.app{grid-template-columns:1fr}}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-color: #060813;
+  --panel-bg: #0c1020;
+  --border-color: #1b223c;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #4e5d78;
+  
+  --green: #10b981;
+  --green-bg: rgba(16, 185, 129, 0.08);
+  --green-glow: rgba(16, 185, 129, 0.2);
+  
+  --red: #f43f5e;
+  --red-bg: rgba(244, 63, 94, 0.08);
+  --red-glow: rgba(244, 63, 94, 0.2);
+  
+  --amber: #f59e0b;
+  --amber-bg: rgba(245, 158, 11, 0.08);
+  --amber-glow: rgba(245, 158, 11, 0.25);
+  
+  --blue: #3b82f6;
+  --blue-bg: rgba(59, 130, 246, 0.1);
+  --blue-glow: rgba(59, 130, 246, 0.2);
+  
+  --purple: #a78bfa;
+  --purple-bg: rgba(167, 139, 250, 0.1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background: var(--bg-color);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 12px;
+  gap: 12px;
+}
+
+.header {
+  height: 52px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.header .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header .logo svg {
+  color: var(--blue);
+}
+
+.header .logo h2 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.status-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.status-item strong {
+  color: var(--text-primary);
+}
+
+.status-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+}
+
+.dot-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-indicator.green {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+.dot-indicator.red {
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.badge-mode {
+  background: var(--blue-bg);
+  color: var(--blue);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.main-container {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+.tickers-panel {
+  height: auto;
+}
+
+.tickers-panel .panel-body {
+  max-height: 700px;
+  overflow-y: auto;
+}
+
+.workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.panel-header h3 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+}
+
+.panel-body {
+  width: 100%;
+}
+
+.panel-body.scrollable-y {
+  padding: 12px;
+}
+
+.panel-footer {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  width: 170px;
+}
+
+.search-box input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  width: 100%;
+}
+
+.search-box input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-box svg {
+  color: var(--text-muted);
+}
+
+.tickers-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tickers-table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-bg);
+  z-index: 10;
+  text-align: left;
+  padding: 10px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tickers-table th:hover {
+  color: var(--text-primary);
+}
+
+.tickers-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.01);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tickers-table tr:hover td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.price {
+  font-weight: 600;
+}
+
+.green { color: var(--green); }
+.red { color: var(--red); }
+.blue { color: var(--blue); }
+.amber { color: var(--amber); }
+
+@keyframes flashGreen {
+  0% { background-color: rgba(16, 185, 129, 0.25); color: #22c55e; }
+  100% { background-color: transparent; }
+}
+
+@keyframes flashRed {
+  0% { background-color: rgba(244, 63, 94, 0.25); color: #f43f5e; }
+  100% { background-color: transparent; }
+}
+
+.flash-up {
+  animation: flashGreen 0.8s ease-out;
+}
+
+.flash-down {
+  animation: flashRed 0.8s ease-out;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.kpi-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.kpi-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+.kpi-value-container {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.kpi-val {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-currency, .kpi-unit {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.mid-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.mid-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.controls-panel {
+  flex-shrink: 0;
+}
+
+.positions-panel {
+  width: 100%;
+}
+
+.mid-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.control-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.control-row.secondary-controls {
+  background: rgba(0, 0, 0, 0.15);
+  padding: 8px 16px;
+  gap: 16px;
+}
+
+.control-label {
+  display: flex;
+  flex-direction: column;
+}
+
+.control-label strong {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.control-label .subtext {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: flex-end;
+  max-width: 200px;
+}
+
+.slider-group input[type=range] {
+  flex: 1;
+  height: 4px;
+  background: #1e293b;
+  border-radius: 2px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.slider-group input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--blue);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.slider-group input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+.slider-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--blue);
+  min-width: 40px;
+  text-align: right;
+}
+
+.slider-group-half {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.slider-group-half label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.slider-group-half .flex-align {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-group-half input[type=range] {
+  flex: 1;
+  height: 3px;
+  background: #181f33;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.slider-group-half input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.slider-group-half .readout {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 25px;
+}
+
+.switch-container {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 22px;
+}
+
+.switch-container input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #1e293b;
+  transition: .2s;
+  border-radius: 22px;
+}
+
+.switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .2s;
+  border-radius: 50%;
+}
+
+input:checked + .switch-slider {
+  background-color: var(--green);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+}
+
+input:checked + .switch-slider:before {
+  transform: translateX(20px);
+}
+
+.strategy-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.strat-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.strat-title {
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.btn {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-success {
+  background: var(--green);
+  color: #060813;
+}
+
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.badge-apr {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.badge-profit {
+  border: 1px solid transparent;
+}
+
+.badge-profit.badge-long {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: rgba(16, 185, 129, 0.15);
+}
+
+.badge-profit.badge-short {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: rgba(244, 63, 94, 0.15);
+}
+
+.no-positions, .empty-feed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+  padding: 24px;
+  text-align: center;
+  gap: 8px;
+}
+
+.feed-live-dot {
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.feed-live-dot:before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 1s infinite;
+}
+
+.feed-live-dot.purple {
+  background: var(--purple-bg);
+  color: var(--purple);
+  border-color: rgba(167, 139, 250, 0.15);
+}
+
+.feed-live-dot.purple:before {
+  background: var(--purple);
+}
+
+.position-count-badge {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.scrollable-y {
+  max-height: 380px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.scrollable-y::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollable-y::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollable-y::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 2px;
+}
+
+.scrollable-y::-webkit-scrollbar-thumb:hover {
+  background: var(--blue);
+}
+
+.position-card {
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--blue);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.position-card.short {
+  border-left-color: var(--red);
+}
+
+.position-card.long {
+  border-left-color: var(--green);
+}
+
+.pos-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.pos-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.badge-short, .badge-long {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.badge-short {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid rgba(244, 63, 94, 0.15);
+}
+
+.badge-long {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+}
+
+.pos-close-btn {
+  background: var(--red-bg);
+  border: 1px solid rgba(244, 63, 94, 0.15);
+  color: var(--red);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.pos-close-btn:hover {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+
+.pos-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pos-stat {
+  background: rgba(0,0,0,0.2);
+  padding: 5px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.pos-lbl {
+  font-size: 8px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  display: block;
+}
+
+.pos-val {
+  font-size: 11px;
+  font-weight: 600;
+  display: block;
+  margin-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-footer {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 11px;
+  border-top: 1px solid rgba(255,255,255,0.02);
+  padding-top: 6px;
+}
+
+.opportunity {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--blue);
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.opportunity:hover {
+  background: rgba(255, 255, 255, 0.02);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+.opportunity.funding {
+  border-left-color: var(--amber);
+}
+
+.opportunity.triangular {
+  border-left-color: var(--purple);
+}
+
+.opp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.opp-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.opp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.opportunity.triangular .opp-stats {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.stat-box {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 5px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 8px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 1px;
+}
+
+.stat-value {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.reject-banner {
+  margin-top: 8px;
+  padding: 5px 8px;
+  background: var(--red-bg);
+  border: 1px solid rgba(244, 63, 94, 0.15);
+  border-radius: 4px;
+  color: var(--red);
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reject-banner svg {
+  flex-shrink: 0;
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.log-table th {
+  padding: 8px;
+  font-size: 9px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  text-align: left;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.log-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.01);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-table tr:hover td {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.sort-icon {
+  font-size: 9px;
+  color: var(--blue);
+}
+
+@media (max-width: 1200px) {
+  .app {
+    height: auto;
+    overflow-y: auto;
+  }
+  body {
+    overflow-y: auto;
+    height: auto;
+  }
+  .main-container {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .workspace-panel {
+    grid-template-rows: auto auto auto;
+    height: auto;
+  }
+  .mid-layout {
+    grid-template-columns: 1fr;
+  }
+  .mid-right-col {
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+  .panel-body.scrollable-y {
+    max-height: 300px;
+  }
+}
+@media (max-width: 600px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="header">
-    <h1>Arbitrage Engine</h1>
-    <div class="status">
-      <span><span class="dot" id="wsDot">&#9679;</span> WS: <span id="wsStatus">connecting</span></span>
-      <span><span class="dot green">&#9679;</span> Symbols: <span id="symCount">0</span></span>
-      <span>Latency: <span id="wsLatency">0</span>ms</span>
-      <span>Uptime: <span id="uptime">00:00:00</span></span>
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+      <h2>Arbitrage Terminal</h2>
     </div>
-  </div>
-
-  <div class="panel" style="grid-row:2">
-    <h2>Tickers</h2>
-    <div class="panel-body">
-      <table>
-        <thead><tr><th>Symbol</th><th>Spot</th><th>Futures</th><th>Basis%</th><th>Fund Rate</th><th>Next Funding</th><th>Vol 24h</th></tr></thead>
-        <tbody id="tickerTable"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="panel" style="grid-row:2;padding:0">
-    <div style="flex:1;overflow-y:auto;padding:10px 10px 4px 10px">
-      <div class="acct-card" id="acctCard">
-        <div class="acct-item"><div class="label">Avail</div><div class="value blue" id="acctBalance">0.00</div></div>
-        <div class="acct-item"><div class="label">Locked</div><div class="value" id="acctLocked" style="color:#eab308">0.00</div></div>
-        <div class="acct-item"><div class="label">Equity</div><div class="value" id="acctEquity" style="color:#22c55e">0.00</div></div>
-        <div class="acct-item"><div class="label">P&amp;L</div><div class="value" id="acctPnl">0.00</div></div>
-        <div class="acct-item"><div class="label">Return</div><div class="value" id="acctReturn">0.00%</div></div>
-        <div class="acct-item"><div class="label">Positions</div><div class="value" id="acctPositions">0</div></div>
+    <div class="status-container">
+      <div class="status-item">
+        <span class="dot-indicator red" id="wsDot"></span>
+        <span>WS: <strong id="wsStatus">Disconnected</strong></span>
       </div>
-      <div class="trade-count" id="tradeCount">0 trades executed</div>
-      <h2 style="margin-top:6px;font-size:13px">Funding Opportunities</h2>
-      <div id="fundingOpps" style="font-size:12px"></div>
-    </div>
-    <div style="flex:1;overflow-y:auto;padding:4px 10px 10px 10px;border-top:1px solid #1e293b">
-      <h2 style="font-size:13px">Triangular Opportunities</h2>
-      <div id="triangularOpps" style="font-size:12px"></div>
-      <div id="triPaths" style="margin-top:4px;font-size:11px;color:#64748b"></div>
-    </div>
-  </div>
-
-  <div class="panel" style="grid-column:1/-1;max-height:300px">
-    <h2>Trade Log</h2>
-    <div class="panel-body">
-      <h2 style="margin-top:4px;font-size:13px">Open Positions</h2>
-      <div id="openPositions" style="font-size:12px;margin-bottom:6px;color:#94a3b8"></div>
-      <table>
-        <thead><tr><th>Time</th><th>Event</th><th>Symbol/Path</th><th>Side</th><th>Notional</th><th>Amount</th><th>Details</th><th>Balance</th></tr></thead>
-        <tbody id="tradeTable"></tbody>
-      </table>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <span>Active Symbols: <strong id="symCount">0</strong></span>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        <span>Latency: <strong id="wsLatency">0</strong>ms</span>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span>Uptime: <strong id="uptime">00:00:00</strong></span>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <span id="modeBadge" class="badge-mode">PAPER</span>
+      </div>
     </div>
   </div>
 
-  <div class="controls">
-    <label>Mode:</label>
-    <span id="modeBadge" class="badge" style="background:#22c55e33;color:#22c55e">PAPER</span>
-    <span style="color:#334155">|</span>
+  <div class="main-container">
+    <!-- Left Column: Watchlist -->
+    <div class="panel tickers-panel">
+      <div class="panel-header">
+        <h3>Market Watchlist</h3>
+        <div class="search-box">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="tickerSearch" placeholder="Filter symbol..." oninput="handleSearch(this.value)">
+        </div>
+      </div>
+      <div class="panel-body">
+        <table class="tickers-table">
+          <thead>
+            <tr>
+              <th onclick="handleSort('Symbol')">Symbol <span class="sort-icon" id="sort-Symbol"></span></th>
+              <th onclick="handleSort('Spot')">Spot <span class="sort-icon" id="sort-Spot"></span></th>
+              <th onclick="handleSort('Futures')">Futures <span class="sort-icon" id="sort-Futures"></span></th>
+              <th onclick="handleSort('Basis')">Basis% <span class="sort-icon" id="sort-Basis"></span></th>
+              <th onclick="handleSort('Funding')">FR <span class="sort-icon" id="sort-Funding"></span></th>
+              <th onclick="handleSort('NextFunding')">Next <span class="sort-icon" id="sort-NextFunding"></span></th>
+              <th onclick="handleSort('Volume')">Vol 24h <span class="sort-icon" id="sort-Volume"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tickerTable"></tbody>
+        </table>
+      </div>
+      <div class="panel-footer">
+        <span id="triPaths">Monitoring 0 triangle paths</span>
+      </div>
+    </div>
 
-    <button id="autoTradeBtn" class="btn-auto-off" onclick="toggleAutoTrade()">AUTO: OFF</button>
-    <span style="color:#334155">|</span>
+    <!-- Right Column: Workspace Grid -->
+    <div class="workspace-panel">
+      <!-- Top: Account Metrics -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Available Balance</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val blue" id="acctBalance">0.00</span>
+            <span class="kpi-currency">USDT</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Locked Margin</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val" id="acctLocked" style="color: var(--amber)">0.00</span>
+            <span class="kpi-currency">USDT</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Total Equity</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val" id="acctEquity" style="color: var(--green)">0.00</span>
+            <span class="kpi-currency">USDT</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Total Return</span>
+          <span class="kpi-val" id="acctPnl">0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Return %</span>
+          <span class="kpi-val" id="acctReturn">0.00%</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Positions</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val" id="acctPositions">0</span>
+            <span class="kpi-unit">Open</span>
+          </div>
+        </div>
+      </div>
 
-    <label>Per Trade:</label>
-    <input type="range" id="sizeSlider" min="0.5" max="100" step="0.5" value="10" oninput="updateTradeSize(this.value)">
-    <span class="size-val" id="sizeVal">10%</span>
-    <span style="color:#334155">|</span>
+      <!-- Mid layout -->
+      <div class="mid-layout">
+        <!-- Mid-Left Column: Controls & Active Positions -->
+        <div class="mid-left-col">
+          <div class="panel controls-panel">
+            <div class="panel-header">
+              <h3>Execution Settings</h3>
+            </div>
+            <div class="panel-body">
+              <div class="control-row">
+                <div class="control-label">
+                  <strong>Auto-Trading Toggle</strong>
+                  <span class="subtext">Automatically executes profitable arb paths</span>
+                </div>
+                <div class="switch-container">
+                  <input type="checkbox" id="autoTradeSwitch" onchange="toggleAutoTrade()">
+                  <label for="autoTradeSwitch" class="switch-slider"></label>
+                </div>
+              </div>
+              <div class="control-row">
+                <div class="control-label">
+                  <strong>Trade Sizing %</strong>
+                  <span class="subtext">Margin allocation percentage per trade</span>
+                </div>
+                <div class="slider-group">
+                  <input type="range" id="sizeSlider" min="0.5" max="100" step="0.5" value="10" oninput="updateTradeSize(this.value)">
+                  <span class="slider-value" id="sizeVal">10%</span>
+                </div>
+              </div>
+              
+              <!-- Placeholder leverage/stoploss to align with backend capabilities -->
+              <div class="control-row secondary-controls">
+                <div class="slider-group-half">
+                  <label>Leverage</label>
+                  <div class="flex-align">
+                    <input type="range" id="levSlider" min="1" max="20" step="1" value="1" disabled style="opacity:0.4">
+                    <span class="readout" style="opacity:0.4">1x</span>
+                  </div>
+                </div>
+                <div class="slider-group-half">
+                  <label>Stoploss %</label>
+                  <div class="flex-align">
+                    <input type="range" id="slSlider" min="0.1" max="10" step="0.1" value="1" disabled style="opacity:0.4">
+                    <span class="readout" style="opacity:0.4">1%</span>
+                  </div>
+                </div>
+              </div>
 
-    <label>Funding:</label>
-    <button class="btn-start" id="fundStart" onclick="toggleStrategy('funding','start')">Start</button>
-    <button class="btn-stop" id="fundStop" onclick="toggleStrategy('funding','stop')" style="display:none">Stop</button>
-    <span style="color:#334155">|</span>
+              <div class="strategy-actions">
+                <div class="strat-btn-group">
+                  <span class="strat-title">Funding Strategy</span>
+                  <button class="btn btn-success" id="fundingStart" onclick="toggleStrategy('funding','start')">Start</button>
+                  <button class="btn btn-danger" id="fundingStop" onclick="toggleStrategy('funding','stop')" style="display:none">Stop</button>
+                </div>
+                <div class="strat-btn-group">
+                  <span class="strat-title">Triangular Strategy</span>
+                  <button class="btn btn-success" id="triangularStart" onclick="toggleStrategy('triangular','start')">Start</button>
+                  <button class="btn btn-danger" id="triangularStop" onclick="toggleStrategy('triangular','stop')" style="display:none">Stop</button>
+                </div>
+              </div>
+            </div>
+          </div>
 
-    <label>Triangular:</label>
-    <button class="btn-start" id="triStart" onclick="toggleStrategy('triangular','start')">Start</button>
-    <button class="btn-stop" id="triStop" onclick="toggleStrategy('triangular','stop')" style="display:none">Stop</button>
+          <div class="panel positions-panel">
+            <div class="panel-header">
+              <h3>Active Positions</h3>
+              <span class="position-count-badge" id="tradeCount">0 trades executed</span>
+            </div>
+            <div class="panel-body scrollable-y" id="openPositions">
+              <div class="no-positions">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                <span>No active positions</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mid-Right Column: Live feeds -->
+        <div class="mid-right-col">
+          <div class="panel opps-panel">
+            <div class="panel-header">
+              <h3>Funding Opportunities</h3>
+              <span class="feed-live-dot">LIVE STREAM</span>
+            </div>
+            <div class="panel-body scrollable-y" id="fundingOpps">
+              <div class="empty-feed">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span>Waiting for funding opportunities...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel opps-panel">
+            <div class="panel-header">
+              <h3>Triangular Opportunities</h3>
+              <span class="feed-live-dot purple">LIVE STREAM</span>
+            </div>
+            <div class="panel-body scrollable-y" id="triangularOpps">
+              <div class="empty-feed">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span>Waiting for triangular opportunities...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom: Trade log -->
+      <div class="panel log-panel">
+        <div class="panel-header">
+          <h3>Transaction & Event Log</h3>
+        </div>
+        <div class="panel-body scrollable-y">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Event</th>
+                <th>Target</th>
+                <th>Side</th>
+                <th>Notional</th>
+                <th>Amount/PnL</th>
+                <th>Metadata / Details</th>
+                <th>Remaining</th>
+              </tr>
+            </thead>
+            <tbody id="tradeTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -146,12 +1208,19 @@ let tradeCount = 0;
 let reconnectDelay = 1000;
 let pingInterval;
 
+const state = {
+  tickers: {},
+  searchQuery: '',
+  sortKey: 'Symbol',
+  sortOrder: 'asc'
+};
+
 function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
 
   ws.onopen = () => {
-    document.getElementById('wsDot').className = 'dot green';
-    document.getElementById('wsStatus').textContent = 'connected';
+    document.getElementById('wsDot').className = 'dot-indicator green';
+    document.getElementById('wsStatus').textContent = 'Connected';
     reconnectDelay = 1000;
     pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -162,8 +1231,8 @@ function connect() {
   };
 
   ws.onclose = () => {
-    document.getElementById('wsDot').className = 'dot red';
-    document.getElementById('wsStatus').textContent = 'disconnected';
+    document.getElementById('wsDot').className = 'dot-indicator red';
+    document.getElementById('wsStatus').textContent = 'Disconnected';
     clearInterval(pingInterval);
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 10000);
@@ -193,6 +1262,7 @@ connect();
 function fmt(v) {
   if (v === undefined || v === null) return '-';
   if (typeof v === 'number') {
+    if (Math.abs(v) < 0.0001) return v.toFixed(8);
     if (Math.abs(v) < 0.01) return v.toFixed(6);
     if (Math.abs(v) < 1) return v.toFixed(4);
     return v.toFixed(2);
@@ -222,44 +1292,218 @@ function fmtUptime(secs) {
   return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
 }
 
+function handleSearch(query) {
+  state.searchQuery = query.toLowerCase().trim();
+  renderTickers();
+}
+
+function handleSort(key) {
+  if (state.sortKey === key) {
+    state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.sortKey = key;
+    state.sortOrder = 'asc';
+  }
+
+  document.querySelectorAll('.tickers-table th').forEach(th => {
+    const icon = th.querySelector('.sort-icon');
+    if (icon) icon.textContent = '';
+  });
+
+  const activeHeaderIcon = document.getElementById('sort-' + key);
+  if (activeHeaderIcon) {
+    activeHeaderIcon.textContent = state.sortOrder === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  renderTickers();
+}
+
+function flashCell(cell, isUp) {
+  const flashClass = isUp ? 'flash-up' : 'flash-down';
+  cell.classList.add(flashClass);
+  setTimeout(() => {
+    cell.classList.remove(flashClass);
+  }, 800);
+}
+
 function updateTickers(data) {
-  const tbody = document.getElementById('tickerTable');
-  let html = '';
-  let count = 0;
+  let needsRebuild = false;
+
   for (const [sym, t] of Object.entries(data)) {
-    count++;
-    const basis = t.spot && t.futures ? ((t.futures - t.spot) / t.spot * 100).toFixed(3) : '-';
-    const basisCls = basis !== '-' && parseFloat(basis) > 0 ? 'green' : basis !== '-' && parseFloat(basis) < 0 ? 'red' : '';
-    const fr = t.funding ? (t.funding * 100).toFixed(4) : '-';
+    if (!state.tickers[sym]) {
+      state.tickers[sym] = { ...t, lastSpot: t.spot, lastFutures: t.futures };
+      needsRebuild = true;
+    } else {
+      const cached = state.tickers[sym];
+      cached.lastSpot = cached.spot;
+      cached.lastFutures = cached.futures;
+      cached.spot = t.spot;
+      cached.futures = t.futures;
+      cached.funding = t.funding;
+      cached.next_funding_time = t.next_funding_time;
+      cached.spot_vol = t.spot_vol;
+      cached.futures_vol = t.futures_vol;
+      cached.bid = t.bid;
+      cached.ask = t.ask;
+    }
+  }
+
+  if (needsRebuild) {
+    renderTickers();
+  } else {
+    for (const [sym, t] of Object.entries(state.tickers)) {
+      const row = document.getElementById(`row-${sym}`);
+      if (!row) continue;
+
+      const spotCell = row.querySelector('.spot-cell');
+      const futuresCell = row.querySelector('.futures-cell');
+      const basisCell = row.querySelector('.basis-cell');
+      const fundingCell = row.querySelector('.funding-cell');
+      const countdownCell = row.querySelector('.countdown-cell');
+      const volCell = row.querySelector('.vol-cell');
+
+      if (spotCell) {
+        const oldVal = parseFloat(spotCell.getAttribute('data-val'));
+        if (oldVal !== t.spot) {
+          spotCell.textContent = fmt(t.spot);
+          spotCell.setAttribute('data-val', t.spot);
+          flashCell(spotCell, t.spot > oldVal);
+        }
+      }
+
+      if (futuresCell) {
+        const oldVal = parseFloat(futuresCell.getAttribute('data-val'));
+        if (oldVal !== t.futures) {
+          futuresCell.textContent = fmt(t.futures);
+          futuresCell.setAttribute('data-val', t.futures);
+          flashCell(futuresCell, t.futures > oldVal);
+        }
+      }
+
+      if (basisCell) {
+        const basis = t.spot && t.futures ? ((t.futures - t.spot) / t.spot * 100) : 0;
+        const oldBasis = parseFloat(basisCell.getAttribute('data-val') || 0);
+        if (basis.toFixed(3) !== oldBasis.toFixed(3)) {
+          basisCell.textContent = basis.toFixed(3) + '%';
+          basisCell.setAttribute('data-val', basis);
+          basisCell.className = `basis-cell ${basis > 0 ? 'green' : basis < 0 ? 'red' : ''}`;
+        }
+      }
+
+      if (fundingCell) {
+        const fr = t.funding ? t.funding * 100 : 0;
+        const oldFr = parseFloat(fundingCell.getAttribute('data-val') || 0);
+        if (fr.toFixed(4) !== oldFr.toFixed(4)) {
+          fundingCell.textContent = fr.toFixed(4) + '%';
+          fundingCell.setAttribute('data-val', fr);
+          fundingCell.className = `funding-cell ${t.funding > 0 ? 'green' : t.funding < 0 ? 'red' : ''}`;
+        }
+      }
+
+      if (countdownCell) {
+        const nextFund = t.next_funding_time ? fmtCountdown(t.next_funding_time - Date.now()) : '-';
+        countdownCell.textContent = nextFund;
+      }
+
+      if (volCell) {
+        const volStr = t.spot_vol ? (t.spot_vol/1e6).toFixed(1)+'M' : '-';
+        volCell.textContent = volStr;
+      }
+    }
+  }
+}
+
+function renderTickers() {
+  const tbody = document.getElementById('tickerTable');
+  if (!tbody) return;
+
+  let list = Object.entries(state.tickers).map(([sym, val]) => ({ sym, ...val }));
+
+  if (state.searchQuery) {
+    list = list.filter(item => item.sym.toLowerCase().includes(state.searchQuery));
+  }
+
+  list.sort((a, b) => {
+    let valA, valB;
+    switch(state.sortKey) {
+      case 'Symbol':
+        valA = a.sym;
+        valB = b.sym;
+        break;
+      case 'Spot':
+        valA = a.spot || 0;
+        valB = b.spot || 0;
+        break;
+      case 'Futures':
+        valA = a.futures || 0;
+        valB = b.futures || 0;
+        break;
+      case 'Basis':
+        valA = a.spot && a.futures ? ((a.futures - a.spot) / a.spot * 100) : 0;
+        valB = b.spot && b.futures ? ((b.futures - b.spot) / b.spot * 100) : 0;
+        break;
+      case 'Funding':
+        valA = a.funding || 0;
+        valB = b.funding || 0;
+        break;
+      case 'NextFunding':
+        valA = a.next_funding_time || 0;
+        valB = b.next_funding_time || 0;
+        break;
+      case 'Volume':
+        valA = a.spot_vol || 0;
+        valB = b.spot_vol || 0;
+        break;
+      default:
+        valA = a.sym;
+        valB = b.sym;
+    }
+
+    if (valA < valB) return state.sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return state.sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  let html = '';
+  list.forEach(t => {
+    const basis = t.spot && t.futures ? ((t.futures - t.spot) / t.spot * 100) : 0;
+    const basisCls = basis > 0 ? 'green' : basis < 0 ? 'red' : '';
+    const fr = t.funding ? t.funding * 100 : 0;
     const frCls = t.funding > 0 ? 'green' : t.funding < 0 ? 'red' : '';
     const nextFund = t.next_funding_time ? fmtCountdown(t.next_funding_time - Date.now()) : '-';
-    html += `<tr>
-      <td><strong>${sym}</strong></td>
-      <td class="price blue">${fmt(t.spot)}</td>
-      <td class="price">${fmt(t.futures)}</td>
-      <td class="${basisCls}">${basis}%</td>
-      <td class="${frCls}">${fr}%</td>
-      <td style="color:#64748b;font-size:11px">${nextFund}</td>
-      <td style="color:#64748b">${t.spot_vol ? (t.spot_vol/1e6).toFixed(1)+'M' : '-'}</td>
+
+    html += `<tr id="row-${t.sym}">
+      <td><strong>${t.sym}</strong></td>
+      <td class="spot-cell price blue" data-val="${t.spot || 0}">${fmt(t.spot)}</td>
+      <td class="futures-cell price" data-val="${t.futures || 0}">${fmt(t.futures)}</td>
+      <td class="basis-cell ${basisCls}" data-val="${basis}">${basis.toFixed(3)}%</td>
+      <td class="funding-cell ${frCls}" data-val="${fr}">${fr.toFixed(4)}%</td>
+      <td class="countdown-cell" style="color:var(--text-muted);font-size:11px">${nextFund}</td>
+      <td class="vol-cell" style="color:var(--text-muted)">${t.spot_vol ? (t.spot_vol/1e6).toFixed(1)+'M' : '-'}</td>
     </tr>`;
-  }
+  });
+
   tbody.innerHTML = html;
-  document.getElementById('symCount').textContent = count;
+  document.getElementById('symCount').textContent = Object.keys(state.tickers).length;
 }
 
 function updateAccount(data) {
   document.getElementById('acctBalance').textContent = fmt(data.balance_usdt);
   document.getElementById('acctLocked').textContent = fmt(data.locked_usdt || 0);
   document.getElementById('acctEquity').textContent = fmt(data.total_equity || data.balance_usdt);
+  
   if (data.triangular_paths !== undefined) {
     document.getElementById('triPaths').textContent = 'Monitoring ' + data.triangular_paths + ' triangle paths';
   }
+  
   const pnlEl = document.getElementById('acctPnl');
   pnlEl.textContent = fmt(data.total_return);
-  pnlEl.className = 'value ' + (data.total_return >= 0 ? 'green' : 'red');
+  pnlEl.className = 'kpi-val ' + (data.total_return >= 0 ? 'green' : 'red');
+  
   const retEl = document.getElementById('acctReturn');
   retEl.textContent = fmt(data.return_pct) + '%';
-  retEl.className = 'value ' + (data.return_pct >= 0 ? 'green' : 'red');
+  retEl.className = 'kpi-val ' + (data.return_pct >= 0 ? 'green' : 'red');
+  
   document.getElementById('acctPositions').textContent = data.open_positions;
 
   if (data.uptime) {
@@ -278,22 +1522,51 @@ function updateAccount(data) {
       const uPNL = p.unrealized_pnl;
       const uPNLCls = uPNL >= 0 ? 'green' : 'red';
       const basisDiff = p.current_basis !== undefined ? (p.current_basis - p.entry_basis).toFixed(3) + '%' : '-';
-      html += `<div style="display:inline-block;background:#1a2332;padding:4px 8px;border-radius:4px;margin:2px 4px 2px 0;border-left:3px solid #f59e0b;font-size:12px;min-width:280px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong>${p.symbol}</strong>
-          <span class="${p.side.includes('short')?'red':'green'}">${p.side.includes('short')?'SHORT':'LONG'}</span>
-          <span>Not: $${p.notional}</span>
-          <button onclick="closePosition('${p.id}')" style="background:transparent;border:1px solid #ef4444;color:#ef4444;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px">X</button>
+      const isShort = p.side.includes('short');
+      const sideBadge = isShort ? '<span class="badge badge-short">SHORT</span>' : '<span class="badge badge-long">LONG</span>';
+
+      html += `
+      <div class="position-card ${isShort ? 'short' : 'long'}">
+        <div class="pos-row pos-header">
+          <div class="pos-title">
+            <strong>${p.symbol}</strong>
+            ${sideBadge}
+          </div>
+          <button class="pos-close-btn" onclick="closePosition('${p.id}')">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            Force Close
+          </button>
         </div>
-        <div style="color:#94a3b8;font-size:11px;margin-top:2px">
-          uPnL: <span class="${uPNLCls}">$${fmt(uPNL)}</span>
-          | Total: <span class="${(p.total_pnl||0) >= 0 ? 'green' : 'red'}">$${fmt(p.total_pnl||0)}</span>
-          | Basis: ${p.current_basis || '-'}% (entry: ${p.entry_basis || '-'}%)
-          | Fund: $${p.funding_received}
+        <div class="pos-stats-grid">
+          <div class="pos-stat">
+            <span class="pos-lbl">Notional</span>
+            <span class="pos-val">$${fmt(p.notional)}</span>
+          </div>
+          <div class="pos-stat">
+            <span class="pos-lbl">Unrealized PnL</span>
+            <span class="pos-val ${uPNLCls}">$${fmt(uPNL)}</span>
+          </div>
+          <div class="pos-stat">
+            <span class="pos-lbl">Total PnL</span>
+            <span class="pos-val ${(p.total_pnl||0) >= 0 ? 'green' : 'red'}">$${fmt(p.total_pnl||0)}</span>
+          </div>
+          <div class="pos-stat">
+            <span class="pos-lbl">Basis Diff</span>
+            <span class="pos-val">${basisDiff}</span>
+          </div>
+        </div>
+        <div class="pos-footer">
+          <span>Entry: ${p.entry_basis || '-'}%</span>
+          <span>Current: ${p.current_basis || '-'}%</span>
+          <span>Funding Recv: <strong class="green">$${fmt(p.funding_received)}</strong></span>
         </div>
       </div>`;
     }
-    document.getElementById('openPositions').innerHTML = html || '<span style="color:#64748b">No open positions</span>';
+    document.getElementById('openPositions').innerHTML = html || `
+      <div class="no-positions">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+        <span>No active positions</span>
+      </div>`;
   }
 }
 
@@ -304,9 +1577,8 @@ async function closePosition(id) {
 }
 
 function updateAutoTradeUI(enabled) {
-  const btn = document.getElementById('autoTradeBtn');
-  btn.textContent = enabled ? 'AUTO: ON' : 'AUTO: OFF';
-  btn.className = enabled ? 'btn-auto-on' : 'btn-auto-off';
+  const checkbox = document.getElementById('autoTradeSwitch');
+  if (checkbox) checkbox.checked = enabled;
 }
 
 function updateSizeUI(pct) {
@@ -315,9 +1587,8 @@ function updateSizeUI(pct) {
 }
 
 function toggleAutoTrade() {
-  const btn = document.getElementById('autoTradeBtn');
-  const newVal = !btn.textContent.includes('ON');
-  ws.send(JSON.stringify({action: 'set_auto_trade', value: newVal}));
+  const checkbox = document.getElementById('autoTradeSwitch');
+  ws.send(JSON.stringify({action: 'set_auto_trade', value: checkbox.checked}));
 }
 
 function updateTradeSize(val) {
@@ -332,6 +1603,11 @@ function addOpportunity(msg) {
   const container = document.getElementById(id);
   if (!container) return;
 
+  const emptyFeed = container.querySelector('.empty-feed');
+  if (emptyFeed) {
+    container.innerHTML = '';
+  }
+
   const key = strat === 'funding' ? d.symbol : d.path;
   const existing = container.querySelector(`[data-key="${key}"]`);
   let html = '';
@@ -339,27 +1615,59 @@ function addOpportunity(msg) {
   if (strat === 'funding') {
     const nf = d.next_funding_time ? fmtCountdown(d.next_funding_time - Date.now()) : '-';
     const reject = d.rejection_reason;
+    const isShort = d.action.toLowerCase().includes('short');
+    const badgeCls = isShort ? 'badge-short' : 'badge-long';
+
     html = `<div class="opportunity funding" data-key="${key}">
-      <div class="title"><span class="badge ${d.action.includes('short') ? 'sell' : 'buy'}">${d.action}</span> ${d.symbol}</div>
-      <div class="detail">
-        <span>FR: <strong class="${d.funding_rate > 0 ? 'green' : 'red'}">${fmtRate(d.funding_rate)}</strong></span>
-        <span>Basis: <strong>${d.basis_pct}%</strong></span>
-        <span class="badge apr">APR: ${fmt(d.expected_apr)}%</span>
-        <span>Next: ${nf}</span>
-        <span>Pays every 8h</span>
+      <div class="opp-header">
+        <div class="opp-title">
+          <span class="badge ${badgeCls}">${d.action.toUpperCase()}</span>
+          <strong>${d.symbol}</strong>
+        </div>
+        <span class="badge badge-apr">APR: ${fmt(d.expected_apr)}%</span>
       </div>
-      ${reject ? `<div class="reject-reason">${reject}</div>` : ''}
+      <div class="opp-stats">
+        <div class="stat-box">
+          <span class="stat-label">FR</span>
+          <span class="stat-value ${d.funding_rate > 0 ? 'green' : 'red'}">${fmtRate(d.funding_rate)}</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Basis</span>
+          <span class="stat-value">${d.basis_pct}%</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Next Pay</span>
+          <span class="stat-value" style="color:var(--text-secondary)">${nf}</span>
+        </div>
+      </div>
+      ${reject ? `<div class="reject-banner">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>Rejection: <strong>${reject}</strong></span>
+      </div>` : ''}
     </div>`;
   } else {
     const reject = d.rejection_reason;
     html = `<div class="opportunity triangular" data-key="${key}">
-      <div class="title">${d.path}</div>
-      <div class="detail">
-        <span>Profit: <strong class="green">${d.profit_pct}%</strong></span>
-        <span>Rate: ${d.rate}</span>
-        <span>Conf: ${fmt(d.confidence)}</span>
+      <div class="opp-header">
+        <div class="opp-title" style="color:var(--purple); font-weight:700;">
+          ${d.path}
+        </div>
+        <span class="badge badge-profit ${d.profit_pct > 0 ? 'badge-long' : 'badge-short'}">Profit: ${d.profit_pct}%</span>
       </div>
-      ${reject ? `<div class="reject-reason">${reject}</div>` : ''}
+      <div class="opp-stats">
+        <div class="stat-box">
+          <span class="stat-label">Effective Rate</span>
+          <span class="stat-value">${d.rate}</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Confidence</span>
+          <span class="stat-value">${fmt(d.confidence)}</span>
+        </div>
+      </div>
+      ${reject ? `<div class="reject-banner">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>Rejection: <strong>${reject}</strong></span>
+      </div>` : ''}
     </div>`;
   }
 
@@ -384,51 +1692,51 @@ function addTrade(data) {
     document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
     const sideLabel = data.action && data.action.includes('short') ? 'SHORT' : 'LONG';
     const nf = data.next_funding_time ? fmtCountdown(data.next_funding_time - Date.now()) : '-';
-    row = `<tr style="border-left:3px solid #f59e0b">
-      <td style="color:#64748b">${now}</td>
-      <td><span class="badge" style="background:#f59e0b33;color:#f59e0b">OPEN</span></td>
+    row = `<tr style="border-left:3px solid var(--amber)">
+      <td style="color:var(--text-muted)">${now}</td>
+      <td><span class="badge" style="background:var(--amber-bg);color:var(--amber)">OPEN</span></td>
       <td><strong>${symbol}</strong></td>
-      <td><span class="badge ${sideLabel === 'LONG' ? 'buy' : 'sell'}">${sideLabel}</span></td>
+      <td><span class="badge ${sideLabel === 'LONG' ? 'badge-long' : 'badge-short'}">${sideLabel}</span></td>
       <td>$${fmt(data.notional)}</td>
-      <td style="color:#ef4444">-$${fmt(data.fee)} fee</td>
-      <td style="color:#94a3b8;font-size:11px">FR:${(data.funding_rate*100).toFixed(4)}% APR:${data.expected_apr}% Next:${nf}</td>
+      <td style="color:var(--red)">-$${fmt(data.fee)} fee</td>
+      <td style="color:var(--text-secondary);font-size:11px">FR:${(data.funding_rate*100).toFixed(4)}% | APR:${data.expected_apr}% | Next:${nf}</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
   } else if (data.event === 'funding_payment') {
     const cls = data.amount >= 0 ? 'green' : 'red';
-    row = `<tr style="border-left:3px solid #22c55e">
-      <td style="color:#64748b">${now}</td>
-      <td><span class="badge" style="background:#22c55e33;color:#22c55e">FUNDING</span></td>
+    row = `<tr style="border-left:3px solid var(--green)">
+      <td style="color:var(--text-muted)">${now}</td>
+      <td><span class="badge" style="background:var(--green-bg);color:var(--green)">FUNDING</span></td>
       <td><strong>${symbol}</strong></td>
       <td>-</td>
       <td>-</td>
       <td class="${cls}">${data.amount >= 0 ? '+' : ''}$${fmt(data.amount)}</td>
-      <td style="color:#94a3b8;font-size:11px">Total received: $${fmt(data.total_received)}</td>
+      <td style="color:var(--text-secondary);font-size:11px">Total received: $${fmt(data.total_received)}</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
   } else if (data.event === 'position_closed') {
     const cls = data.total_pnl >= 0 ? 'green' : 'red';
-    row = `<tr style="border-left:3px solid #ef4444">
-      <td style="color:#64748b">${now}</td>
-      <td><span class="badge" style="background:#ef444433;color:#ef4444">CLOSE</span></td>
+    row = `<tr style="border-left:3px solid var(--red)">
+      <td style="color:var(--text-muted)">${now}</td>
+      <td><span class="badge" style="background:var(--red-bg);color:var(--red)">CLOSE</span></td>
       <td><strong>${symbol}</strong></td>
       <td>-</td>
       <td>$${fmt(data.notional)}</td>
       <td class="${cls}">${data.total_pnl >= 0 ? '+' : ''}$${fmt(data.total_pnl)}</td>
-      <td style="color:#94a3b8;font-size:11px">PnL:$${fmt(data.price_pnl)} Fund:$${fmt(data.funding_received)} Fees:$${fmt(data.fees)}</td>
+      <td style="color:var(--text-secondary);font-size:11px">PnL:$${fmt(data.price_pnl)} | Fund:$${fmt(data.funding_received)} | Fees:-$${fmt(data.fees)}</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
   } else if (data.event === 'trade_completed') {
     tradeCount++;
     document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
     const legsStr = data.legs ? data.legs.map(l => l.side+' '+l.symbol+' @ $'+fmt(l.price)).join(' | ') : '';
-    row = `<tr style="border-left:3px solid #a78bfa">
-      <td style="color:#64748b">${now}</td>
-      <td><span class="badge" style="background:#a78bfa33;color:#a78bfa">TRIANGLE</span></td>
+    row = `<tr style="border-left:3px solid var(--purple)">
+      <td style="color:var(--text-muted)">${now}</td>
+      <td><span class="badge" style="background:var(--purple-bg);color:var(--purple)">TRIANGLE</span></td>
       <td><strong>${symbol}</strong></td>
-      <td style="font-size:11px;color:#94a3b8" colspan="2">${legsStr}</td>
+      <td style="font-size:11px;color:var(--text-secondary)" colspan="2">${legsStr}</td>
       <td class="green">+$${fmt(data.net_profit)}</td>
-      <td style="color:#94a3b8;font-size:11px">${data.profit_pct}%</td>
+      <td style="color:var(--text-secondary);font-size:11px">Profit: ${data.profit_pct}%</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
   }
@@ -450,9 +1758,9 @@ async function toggleStrategy(strategy, action) {
       const stopBtn = document.getElementById(strategy + 'Stop');
       if (action === 'start') {
         startBtn.style.display = 'none';
-        stopBtn.style.display = 'inline-block';
+        stopBtn.style.display = 'block';
       } else {
-        startBtn.style.display = 'inline-block';
+        startBtn.style.display = 'block';
         stopBtn.style.display = 'none';
       }
     }

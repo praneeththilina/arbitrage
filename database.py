@@ -5,16 +5,21 @@ from typing import List, Dict, Optional
 from contextlib import asynccontextmanager
 from config import settings
 
+_global_conn = None
+
 @asynccontextmanager
 async def get_conn():
-    conn = await aiosqlite.connect(settings.db_path)
-    conn.row_factory = aiosqlite.Row
-    await conn.execute("PRAGMA journal_mode=WAL")
-    await conn.execute("PRAGMA busy_timeout=5000")
+    global _global_conn
+    if _global_conn is None:
+        _global_conn = await aiosqlite.connect(settings.db_path)
+        _global_conn.row_factory = aiosqlite.Row
+        await _global_conn.execute("PRAGMA journal_mode=WAL")
+        await _global_conn.execute("PRAGMA synchronous=NORMAL")
+        await _global_conn.execute("PRAGMA busy_timeout=5000")
     try:
-        yield conn
+        yield _global_conn
     finally:
-        await conn.close()
+        pass  # Do not close the connection
 
 async def init_db():
     async with get_conn() as conn:
