@@ -1,264 +1,126 @@
 import asyncio
-import json
-import time
-import hmac
-import hashlib
+import aiohttp
 import logging
-from typing import Dict, List, Optional, Callable, Any
-from dataclasses import dataclass, field
-
-import httpx
-import websockets
+from typing import Dict, List
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class TickerData:
-    symbol: str
     spot_price: float = 0.0
     futures_price: float = 0.0
     funding_rate: float = 0.0
     next_funding_time: int = 0
-    mark_price: float = 0.0
     spot_volume_24h: float = 0.0
     futures_volume_24h: float = 0.0
-    spot_change_24h: float = 0.0
-    futures_change_24h: float = 0.0
     bid: float = 0.0
     ask: float = 0.0
-    last_price: float = 0.0
-
-
-@dataclass
-class OrderBookLevel:
-    price: float
-    qty: float
-
-
-@dataclass
-class OrderBook:
-    symbol: str
-    bids: List[OrderBookLevel] = field(default_factory=list)
-    asks: List[OrderBookLevel] = field(default_factory=list)
-    timestamp: int = 0
-
 
 class BinanceClient:
-    SPOT_BASE = "wss://stream.binance.com:9443"
-    FUTURES_BASE = "wss://fstream.binance.com"
-    REST_BASE = "https://api.binance.com"
-    FUTURES_REST_BASE = "https://fapi.binance.com"
-
     def __init__(self, api_key: str = "", secret_key: str = ""):
         self.api_key = api_key
         self.secret_key = secret_key
         self.tickers: Dict[str, TickerData] = {}
-        self.orderbooks: Dict[str, OrderBook] = {}
-        self._spot_ws: Optional[websockets.WebSocketClientProtocol] = None
-        self._futures_ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
-        self._callbacks: Dict[str, List[Callable]] = {
-            "ticker": [],
-            "funding": [],
-            "orderbook": [],
-            "trade": [],
-        }
+        self.session = None
 
-    def on(self, event: str, cb: Callable):
-        self._callbacks[event].append(cb)
+    async def get_common_symbols(self, limit: int = 30, min_volume: float = 0) -> List[str]:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://fapi.binance.com/fapi/v1/ticker/24hr") as resp:
+                data = await resp.json()
+                valid = [d for d in data if float(d.get("quoteVolume", 0)) > min_volume and d["symbol"].endswith("USDT")]
+                sorted_data = sorted(valid, key=lambda x: float(x["quoteVolume"]), reverse=True)
+                return [d["symbol"] for d in sorted_data[:limit]]
 
-    def _emit(self, event: str, data: Any):
-        for cb in self._callbacks.get(event, []):
-            try:
-                cb(data)
-            except Exception as e:
-                logger.error(f"Callback error {event}: {e}")
-
-    async def get_exchange_info(self) -> List[Dict]:
-        async with httpx.AsyncClient() as cli:
-            resp = await cli.get(f"{self.REST_BASE}/api/v3/exchangeInfo")
-            data = resp.json()
-            return [s for s in data["symbols"] if s["status"] == "TRADING"]
-
-    async def get_futures_exchange_info(self) -> List[Dict]:
-        async with httpx.AsyncClient() as cli:
-            resp = await cli.get(f"{self.FUTURES_REST_BASE}/fapi/v1/exchangeInfo")
-            data = resp.json()
-            return [s for s in data["symbols"] if s["status"] == "TRADING"]
-
-    async def get_top_symbols(self, limit: int = 30, min_volume: float = 10_000_000) -> List[str]:
-        async with httpx.AsyncClient() as cli:
-            tickers_resp = await cli.get(f"{self.REST_BASE}/api/v3/ticker/24hr")
-            tickers = tickers_resp.json()
-
-        volumes = []
-        for t in tickers:
-            vol_usdt = float(t.get("quoteVolume", 0))
-            if vol_usdt >= min_volume and t["symbol"].endswith("USDT"):
-                volumes.append((t["symbol"], vol_usdt))
-
-        volumes.sort(key=lambda x: x[1], reverse=True)
-        return [s for s, v in volumes[:limit]]
-
-    async def get_common_symbols(self, limit: int = 30, min_volume: float = 10_000_000) -> List[str]:
-        top = await self.get_top_symbols(limit=limit*2, min_volume=min_volume)
-        async with httpx.AsyncClient() as cli:
-            resp = await cli.get(f"{self.FUTURES_REST_BASE}/fapi/v1/exchangeInfo")
-            data = resp.json()
-        futures_symbols = {s["symbol"] for s in data["symbols"] if s["status"] == "TRADING"}
-        common = [s for s in top if s in futures_symbols]
-        return common[:limit]
-
-    async def get_funding_rates(self, symbols: List[str]) -> Dict[str, dict]:
-        async with httpx.AsyncClient() as cli:
-            resp = await cli.get(f"{self.FUTURES_REST_BASE}/fapi/v1/premiumIndex")
-            data = resp.json()
-
-        result = {}
-        for item in data:
-            if item["symbol"] in symbols:
-                result[item["symbol"]] = {
-                    "rate": float(item["lastFundingRate"]),
-                    "next_time": int(item["nextFundingTime"]),
+    async def get_exchange_info(self) -> Dict[str, Dict]:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.binance.com/api/v3/exchangeInfo") as resp:
+                data = await resp.json()
+                return {
+                    s["symbol"]: {"base": s["baseAsset"], "quote": s["quoteAsset"]}
+                    for s in data.get("symbols", [])
+                    if s["status"] == "TRADING"
                 }
-        return result
 
-    def _sign_request(self, params: Dict) -> Dict:
-        query = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-        signature = hmac.new(
-            self.secret_key.encode(), query.encode(), hashlib.sha256
-        ).hexdigest()
-        params["signature"] = signature
-        return params
-
-    async def _spot_ws_loop(self, symbols: List[str]):
-        streams = "/".join(f"{s.lower()}@ticker" for s in symbols)
-        uri = f"{self.SPOT_BASE}/stream?streams={streams}"
-        while self._running:
-            try:
-                async with websockets.connect(uri, ping_interval=20) as ws:
-                    self._spot_ws = ws
-                    async for msg in ws:
-                        data = json.loads(msg)
-                        if data.get("stream") and data.get("data"):
-                            self._handle_spot_ticker(data["data"])
-            except websockets.ConnectionClosed as e:
-                if self._running:
-                    await asyncio.sleep(5)
-            except Exception as e:
-                logger.error(f"Spot WS error: {e}")
-                if self._running:
-                    await asyncio.sleep(10)
-
-    async def _futures_ws_loop(self, symbols: List[str]):
-        batch_size = 40
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i:i+batch_size]
-            asyncio.create_task(self._futures_batch_loop(batch))
-
-    async def _futures_batch_loop(self, symbols: List[str]):
-        streams = "/".join(f"{s.lower()}@bookTicker" for s in symbols)
-        uri = f"{self.FUTURES_BASE}/stream?streams={streams}"
-        while self._running:
-            try:
-                async with websockets.connect(uri, ping_interval=20) as ws:
-                    async for msg in ws:
-                        data = json.loads(msg)
-                        if data.get("stream") and data.get("data"):
-                            self._handle_futures_book(data["data"])
-            except websockets.ConnectionClosed as e:
-                if self._running:
-                    await asyncio.sleep(5)
-            except Exception as e:
-                logger.error(f"Futures WS error: {e}")
-                if self._running:
-                    await asyncio.sleep(10)
-
-    async def _funding_rate_poller(self, symbols: List[str]):
-        while self._running:
-            try:
-                rates = await self.get_funding_rates(symbols)
-                for sym, info in rates.items():
-                    if sym in self.tickers:
-                        self.tickers[sym].funding_rate = info["rate"]
-                        self.tickers[sym].next_funding_time = info["next_time"]
-            except Exception as e:
-                logger.error(f"Funding rate poll error: {e}")
-            await asyncio.sleep(10)
-
-    def _handle_spot_ticker(self, d: Dict):
-        sym = d["s"]
-        if sym not in self.tickers:
-            self.tickers[sym] = TickerData(symbol=sym)
-        t = self.tickers[sym]
-        t.spot_price = float(d["c"])
-        t.spot_volume_24h = float(d["q"])
-        t.spot_change_24h = float(d["P"])
-        t.bid = float(d["b"])
-        t.ask = float(d["a"])
-        t.last_price = float(d["c"])
-        self._emit("ticker", (sym, "spot", t))
-
-    def _handle_futures_book(self, d: Dict):
-        sym = d["s"]
-        if sym not in self.tickers:
-            self.tickers[sym] = TickerData(symbol=sym)
-        t = self.tickers[sym]
-        mid = (float(d["b"]) + float(d["a"])) / 2
-        t.futures_price = mid
-        t.bid = float(d["b"])
-        t.ask = float(d["a"])
-        self._emit("ticker", (sym, "futures", t))
-
-    async def start(self, symbols: List[str], extra_spot_symbols: List[str] = None):
+    async def start(self, symbols: List[str], extra_spot_symbols: List[str]):
         self._running = True
-        all_spot = list(set(symbols + (extra_spot_symbols or [])))
-        await asyncio.gather(
-            self._spot_ws_loop(all_spot),
-            self._futures_ws_loop(symbols),
-            self._funding_rate_poller(symbols),
-        )
+        self.session = aiohttp.ClientSession()
+        all_spot = set(symbols + extra_spot_symbols)
+        
+        for sym in symbols:
+            if sym not in self.tickers:
+                self.tickers[sym] = TickerData()
+        for sym in extra_spot_symbols:
+            if sym not in self.tickers:
+                self.tickers[sym] = TickerData()
+
+        logger.info("Starting Binance data streams")
+        
+        asyncio.create_task(self._volume_loop(all_spot, set(symbols)))
+        
+        while self._running:
+            try:
+                await asyncio.gather(
+                    self._fetch_spot_prices(all_spot),
+                    self._fetch_futures_data(symbols)
+                )
+            except Exception as e:
+                logger.error(f"Data fetch error: {e}")
+            await asyncio.sleep(1)
+
+    async def _volume_loop(self, spot_symbols: set, futures_symbols: set):
+        while self._running:
+            try:
+                await asyncio.gather(
+                    self._fetch_spot_volumes(spot_symbols),
+                    self._fetch_futures_volumes(futures_symbols)
+                )
+            except Exception as e:
+                logger.error(f"Volume fetch error: {e}")
+            await asyncio.sleep(10) 
+
+    async def _fetch_spot_prices(self, symbols: set):
+        async with self.session.get("https://api.binance.com/api/v3/ticker/bookTicker") as resp:
+            data = await resp.json()
+            for item in data:
+                sym = item["symbol"]
+                if sym in symbols:
+                    if sym not in self.tickers:
+                        self.tickers[sym] = TickerData()
+                    self.tickers[sym].bid = float(item["bidPrice"])
+                    self.tickers[sym].ask = float(item["askPrice"])
+                    self.tickers[sym].spot_price = (self.tickers[sym].bid + self.tickers[sym].ask) / 2
+
+    async def _fetch_futures_data(self, symbols: List[str]):
+        async with self.session.get("https://fapi.binance.com/fapi/v1/premiumIndex") as resp:
+            data = await resp.json()
+            for item in data:
+                sym = item["symbol"]
+                if sym in symbols:
+                    if sym not in self.tickers:
+                        self.tickers[sym] = TickerData()
+                    self.tickers[sym].futures_price = float(item["markPrice"])
+                    self.tickers[sym].funding_rate = float(item["lastFundingRate"])
+                    self.tickers[sym].next_funding_time = int(item["nextFundingTime"])
+
+    async def _fetch_spot_volumes(self, symbols: set):
+        async with self.session.get("https://api.binance.com/api/v3/ticker/24hr") as resp:
+            data = await resp.json()
+            for item in data:
+                sym = item["symbol"]
+                if sym in symbols and sym in self.tickers:
+                    self.tickers[sym].spot_volume_24h = float(item["quoteVolume"])
+
+    async def _fetch_futures_volumes(self, symbols: set):
+        async with self.session.get("https://fapi.binance.com/fapi/v1/ticker/24hr") as resp:
+            data = await resp.json()
+            for item in data:
+                sym = item["symbol"]
+                if sym in symbols and sym in self.tickers:
+                    self.tickers[sym].futures_volume_24h = float(item["quoteVolume"])
 
     async def stop(self):
         self._running = False
-        if self._spot_ws:
-            await self._spot_ws.close()
-        if self._futures_ws:
-            await self._futures_ws.close()
-
-    async def place_order(self, symbol: str, side: str, order_type: str,
-                          quantity: float, price: Optional[float] = None) -> Dict:
-        if not self.api_key:
-            return {"error": "no_api_key"}
-        params = {
-            "symbol": symbol,
-            "side": side.upper(),
-            "type": order_type.upper(),
-            "quantity": quantity,
-            "timestamp": int(time.time() * 1000),
-        }
-        if price:
-            params["price"] = price
-        params = self._sign_request(params)
-
-        async with httpx.AsyncClient() as cli:
-            resp = await cli.post(
-                f"{self.REST_BASE}/api/v3/order",
-                headers={"X-MBX-APIKEY": self.api_key},
-                params=params,
-            )
-            return resp.json()
-
-    async def get_account(self) -> Dict:
-        if not self.api_key:
-            return {}
-        params = {"timestamp": int(time.time() * 1000)}
-        params = self._sign_request(params)
-        async with httpx.AsyncClient() as cli:
-            resp = await cli.get(
-                f"{self.REST_BASE}/api/v3/account",
-                headers={"X-MBX-APIKEY": self.api_key},
-                params=params,
-            )
-            return resp.json()
+        if self.session:
+            await self.session.close()

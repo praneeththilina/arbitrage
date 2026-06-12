@@ -2,14 +2,13 @@ import asyncio
 import time
 import uuid
 import logging
-from typing import Dict, Optional, Callable, Any, List
-from dataclasses import dataclass, field
+from typing import Dict, Optional, Callable, List
+from dataclasses import dataclass
 
 from config import settings
 from database import save_opportunity, save_order, update_order, update_balance
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class PaperPosition:
@@ -29,7 +28,6 @@ class PaperPosition:
     next_funding_time: float = 0.0
     is_short_perp: bool = True
     status: str = "open"
-
 
 class PaperEngine:
     def __init__(self):
@@ -68,15 +66,17 @@ class PaperEngine:
 
     async def start(self):
         self._running = True
-        update_balance("USDT", self.balance_usdt, 0, self.balance_usdt)
+        await update_balance("USDT", self.balance_usdt, 0, self.balance_usdt)
         asyncio.create_task(self._settlement_loop())
 
     def stop(self):
         self._running = False
 
-    def _calculate_fee(self, notional: float, is_maker: bool = False) -> float:
-        fee_rate = settings.maker_fee if is_maker else settings.taker_fee
-        return notional * fee_rate
+    def _calculate_spot_fee(self, notional: float) -> float:
+        return notional * settings.taker_fee
+
+    def _calculate_futures_fee(self, notional: float) -> float:
+        return notional * 0.0005
 
     def _get_position_size(self) -> float:
         return (self.balance_usdt + self.locked_usdt) * (self._trade_size_pct / 100.0)
@@ -99,7 +99,7 @@ class PaperEngine:
             for pos in list(self.positions.values()):
                 if pos.strategy != "funding" or pos.status != "open":
                     continue
-                if pos.next_funding_time > 0 and now >= pos.next_funding_time:
+                if pos.next_funding_time > 0 and now >= (pos.next_funding_time / 1000):
                     await self._process_funding_settlement(pos)
             await asyncio.sleep(10)
 
@@ -115,18 +115,13 @@ class PaperEngine:
             pos.next_funding_time = t.next_funding_time
             return
 
-        if pos.is_short_perp:
-            payment = fr * pos.notional
-        else:
-            payment = -fr * pos.notional
+        payment = fr * pos.notional if pos.is_short_perp else -fr * pos.notional
 
         self.balance_usdt += payment
         pos.funding_received += payment
         pos.next_funding_time = t.next_funding_time
 
-        logger.info(f"Funding settlement {pos.symbol}: ${payment:.2f}, total received: ${pos.funding_received:.2f}")
-
-        update_balance("USDT", self.balance_usdt, 0, self.balance_usdt + self.locked_usdt)
+        await update_balance("USDT", self.balance_usdt, 0, self.balance_usdt + self.locked_usdt)
 
         if self._on_trade:
             await self._on_trade({
@@ -147,37 +142,34 @@ class PaperEngine:
             return result
 
         pos_size = self._get_position_size()
-        if pos_size <= 0:
-            result["reason"] = "zero balance"
-            return result
-
         pos_size = min(pos_size, settings.max_position_size_usdt)
 
-        if pos_size > self._available_balance():
-            result["reason"] = f"need ${pos_size:.0f} but only ${self._available_balance():.0f} available"
+        if pos_size > self._available_balance() or pos_size <= 0:
+            result["reason"] = "insufficient balance"
             return result
 
-        entry_fee = self._calculate_fee(pos_size) * 2
-        exit_fee = self._calculate_fee(pos_size * (1 + 0.001)) * 2
+        entry_fee = self._calculate_spot_fee(pos_size) + self._calculate_futures_fee(pos_size)
+        exit_fee = self._calculate_spot_fee(pos_size) + self._calculate_futures_fee(pos_size)
+        
         per_settlement_income = abs(op.funding_rate) * pos_size
-        total_costs = entry_fee + exit_fee
+        basis_value = (op.net_basis_pct / 100.0) * pos_size
+        total_costs = entry_fee + exit_fee - basis_value
+
         settlements_to_breakeven = total_costs / per_settlement_income if per_settlement_income > 0 else 999
 
-        if settlements_to_breakeven > 3:
-            result["reason"] = f"breakeven in {settlements_to_breakeven:.1f} settlements (max 3)"
+        if settlements_to_breakeven > 5:
+            result["reason"] = f"breakeven requires {settlements_to_breakeven:.1f} intervals"
             return result
 
         if len(self.positions) >= settings.max_concurrent_positions:
             result["reason"] = "max concurrent positions reached"
             return result
 
-        for p in self.positions.values():
-            if p.symbol == op.symbol and p.status == "open":
-                result["reason"] = "position already open for this symbol"
-                return result
+        if any(p.symbol == op.symbol and p.status == "open" for p in self.positions.values()):
+            result["reason"] = "position active"
+            return result
 
-        cooldown_key = f"funding_{op.symbol}"
-        if self._is_on_cooldown(cooldown_key):
+        if self._is_on_cooldown(f"funding_{op.symbol}"):
             result["reason"] = "on cooldown"
             return result
 
@@ -185,8 +177,6 @@ class PaperEngine:
         result["pos_size"] = pos_size
         result["entry_fee"] = entry_fee
         result["exit_fee"] = exit_fee
-        result["per_settlement_income"] = per_settlement_income
-        result["settlements_to_breakeven"] = settlements_to_breakeven
         return result
 
     def validate_triangular_op(self, op) -> Dict:
@@ -197,27 +187,13 @@ class PaperEngine:
             result["reason"] = "zero balance"
             return result
 
-        tri_fee_rate = 0.0004
-        total_fees = 0
-        for leg in op.legs:
-            leg_notional = pos_size
-            total_fees += leg_notional * tri_fee_rate
+        net_profit_usdt = pos_size * (op.profit_pct / 100.0)
 
-        net_profit_pct = op.profit_pct - (total_fees / pos_size * 100)
-        net_profit_usdt = pos_size * (net_profit_pct / 100)
-
-        if net_profit_usdt < 0.01:
-            result["reason"] = f"net profit ${net_profit_usdt:.2f} too small"
+        if net_profit_usdt < 0.01 or self._is_on_cooldown(f"tri_{op.symbol_a}_{op.symbol_b}_{op.symbol_c}"):
+            result["reason"] = "invalid net profit or cooldown"
             return result
 
-        if len(self.positions) >= settings.max_concurrent_positions:
-            result["reason"] = "max concurrent positions"
-            return result
-
-        path_key = f"tri_{op.symbol_a}_{op.symbol_b}_{op.symbol_c}"
-        if self._is_on_cooldown(path_key):
-            result["reason"] = "on cooldown"
-            return result
+        total_fees = sum([self._calculate_spot_fee(pos_size) for _ in op.legs])
 
         result["valid"] = True
         result["net_profit"] = net_profit_usdt
@@ -226,24 +202,20 @@ class PaperEngine:
         return result
 
     async def evaluate_and_execute(self, op_type: str, op) -> Optional[Dict]:
-        if not self._auto_trade:
-            return None
-
-        if not self._running:
+        if not self._auto_trade or not self._running:
             return None
 
         if op_type == "funding":
             validation = self.validate_funding_op(op)
-            if not validation["valid"]:
-                return None
-            self._set_cooldown(f"funding_{op.symbol}")
-            return await self._open_funding_position(op, validation)
+            if validation["valid"]:
+                self._set_cooldown(f"funding_{op.symbol}")
+                return await self._open_funding_position(op, validation)
+            
         elif op_type == "triangular":
             validation = self.validate_triangular_op(op)
-            if not validation["valid"]:
-                return None
-            self._set_cooldown(f"tri_{op.symbol_a}_{op.symbol_b}_{op.symbol_c}")
-            return await self._execute_triangular(op, validation)
+            if validation["valid"]:
+                self._set_cooldown(f"tri_{op.symbol_a}_{op.symbol_b}_{op.symbol_c}")
+                return await self._execute_triangular(op, validation)
 
         return None
 
@@ -252,34 +224,27 @@ class PaperEngine:
         entry_fee = validation["entry_fee"]
         is_short = "short" in op.action
 
-        op_id = save_opportunity(
-            "funding", op.symbol, op.details,
-            op.expected_apr / 100, 0, op.confidence
-        )
+        op_id = await save_opportunity("funding", op.symbol, op.details, op.expected_apr / 100, 0, op.confidence)
 
         spot_qty = pos_size / op.spot_price if op.spot_price > 0 else 0
         futures_qty = pos_size / op.futures_price if op.futures_price > 0 else 0
 
-        orders = []
         spot_side = "SELL" if is_short else "BUY"
         futures_side = "BUY" if "long_perp" in op.action else "SELL"
 
-        spot_order_id = save_order(op_id, "funding_arb", op.symbol, spot_side, op.spot_price, spot_qty)
-        orders.append({"id": spot_order_id, "symbol": op.symbol, "side": spot_side, "price": op.spot_price, "qty": spot_qty})
+        spot_order_id = await save_order(op_id, "funding_arb", op.symbol, spot_side, op.spot_price, spot_qty)
+        fut_order_id = await save_order(op_id, "funding_arb", f"{op.symbol}_PERP", futures_side, op.futures_price, futures_qty)
 
-        fut_order_id = save_order(op_id, "funding_arb", f"{op.symbol}_PERP", futures_side, op.futures_price, futures_qty)
-        orders.append({"id": fut_order_id, "symbol": f"{op.symbol}_PERP", "side": futures_side, "price": op.futures_price, "qty": futures_qty})
+        orders = [
+            {"id": spot_order_id, "symbol": op.symbol, "side": spot_side, "price": op.spot_price, "qty": spot_qty},
+            {"id": fut_order_id, "symbol": f"{op.symbol}_PERP", "side": futures_side, "price": op.futures_price, "qty": futures_qty}
+        ]
 
         self.balance_usdt -= pos_size
         self.locked_usdt += pos_size
 
         for o in orders:
-            update_order(o["id"], "filled", time.strftime("%Y-%m-%dT%H:%M:%SZ"), entry_fee / 2, 0)
-
-        if is_short:
-            basis = ((op.futures_price - op.spot_price) / op.spot_price) * 100
-        else:
-            basis = ((op.spot_price - op.futures_price) / op.futures_price) * 100
+            await update_order(o["id"], "filled", time.strftime("%Y-%m-%dT%H:%M:%SZ"), entry_fee / 2, 0)
 
         pos_id = f"{op.symbol}_funding_{uuid.uuid4().hex[:8]}"
         self.positions[pos_id] = PaperPosition(
@@ -299,7 +264,7 @@ class PaperEngine:
             is_short_perp=is_short,
         )
 
-        update_balance("USDT", self.balance_usdt, 0, self.balance_usdt + self.locked_usdt)
+        await update_balance("USDT", self.balance_usdt, 0, self.balance_usdt + self.locked_usdt)
 
         result = {
             "event": "position_opened",
@@ -312,7 +277,6 @@ class PaperEngine:
             "locked": round(self.locked_usdt, 2),
             "action": op.action,
             "funding_rate": op.funding_rate,
-            "basis_pct": round(basis, 4),
             "spot_price": op.spot_price,
             "futures_price": op.futures_price,
             "expected_apr": round(op.expected_apr, 2),
@@ -332,6 +296,7 @@ class PaperEngine:
 
         spot_price = pos.entry_spot_price
         futures_price = pos.entry_futures_price
+        
         if client:
             t = client.tickers.get(pos.symbol)
             if t:
@@ -341,31 +306,16 @@ class PaperEngine:
         short_pnl = ((pos.entry_futures_price - futures_price) / pos.entry_futures_price) * pos.notional if pos.entry_futures_price > 0 else 0
         long_pnl = ((spot_price - pos.entry_spot_price) / pos.entry_spot_price) * pos.notional if pos.entry_spot_price > 0 else 0
 
-        if pos.is_short_perp:
-            price_pnl = short_pnl + long_pnl
-        else:
-            price_pnl = -short_pnl + long_pnl
+        price_pnl = short_pnl + long_pnl if pos.is_short_perp else -short_pnl + long_pnl
 
-        exit_fee = self._calculate_fee(pos.notional * (1 + 0.001)) * 2
+        exit_fee = self._calculate_spot_fee(pos.notional) + self._calculate_futures_fee(pos.notional)
         total_pnl = price_pnl + pos.funding_received - pos.fees_paid - exit_fee
 
         self.balance_usdt += pos.notional + total_pnl
         self.locked_usdt -= pos.notional
         pos.status = "closed"
 
-        self.closed_trades.append({
-            "symbol": pos.symbol,
-            "strategy": "funding",
-            "opened_at": pos.opened_at,
-            "closed_at": time.time(),
-            "notional": pos.notional,
-            "price_pnl": round(price_pnl, 2),
-            "funding_received": round(pos.funding_received, 2),
-            "fees": round(pos.fees_paid + exit_fee, 2),
-            "total_pnl": round(total_pnl, 2),
-        })
-
-        update_balance("USDT", self.balance_usdt, 0, self.balance_usdt + self.locked_usdt)
+        await update_balance("USDT", self.balance_usdt, 0, self.balance_usdt + self.locked_usdt)
 
         result = {
             "event": "position_closed",
@@ -391,30 +341,21 @@ class PaperEngine:
         total_fees = validation["total_fees"]
         net_profit = validation["net_profit"]
 
-        op_id = save_opportunity(
-            "triangular", f"{op.symbol_a}-{op.symbol_b}-{op.symbol_c}",
-            op.details, op.profit_pct / 100, validation["net_profit"],
-            op.confidence
-        )
+        op_id = await save_opportunity("triangular", f"{op.symbol_a}-{op.symbol_b}-{op.symbol_c}", op.details, op.profit_pct / 100, validation["net_profit"], op.confidence)
 
         orders = []
         current_notional = pos_size
 
         for leg in op.legs:
             qty = current_notional / leg["price"] if leg["price"] > 0 else 0
-            oid = save_order(op_id, "triangular_arb", leg["symbol"], leg["side"], leg["price"], qty)
-            update_order(oid, "filled", time.strftime("%Y-%m-%dT%H:%M:%SZ"), total_fees / len(op.legs), 0)
+            oid = await save_order(op_id, "triangular_arb", leg["symbol"], leg["side"], leg["price"], qty)
+            await update_order(oid, "filled", time.strftime("%Y-%m-%dT%H:%M:%SZ"), self._calculate_spot_fee(current_notional), 0)
             orders.append({"id": oid, "symbol": leg["symbol"], "side": leg["side"], "price": leg["price"], "qty": qty})
-            if leg["side"] == "BUY":
-                current_notional = qty
-            else:
-                current_notional = qty * leg["price"]
+            current_notional = qty if leg["side"] == "BUY" else qty * leg["price"]
 
         self.balance_usdt += net_profit
+        await update_balance("USDT", self.balance_usdt, 0, self.balance_usdt)
 
-        update_balance("USDT", self.balance_usdt, 0, self.balance_usdt)
-
-        trade_time = time.strftime("%H:%M:%S")
         result = {
             "event": "trade_completed",
             "type": "triangular",
@@ -426,25 +367,48 @@ class PaperEngine:
             "balance_remaining": round(self.balance_usdt, 2),
             "profit_pct": round(op.profit_pct, 4),
             "legs": op.legs,
-            "trade_time": trade_time,
+            "trade_time": time.strftime("%H:%M:%S"),
         }
 
         if self._on_trade:
             await self._on_trade(result)
         return result
 
-    def get_open_positions(self) -> List[Dict]:
-        return [{
-            "id": p.id,
-            "symbol": p.symbol,
-            "side": p.side,
-            "notional": round(p.notional, 2),
-            "entry_spot": round(p.entry_spot_price, 6),
-            "entry_futures": round(p.entry_futures_price, 6),
-            "funding_received": round(p.funding_received, 2),
-            "fees_paid": round(p.fees_paid, 2),
-            "opened_at": time.strftime("%H:%M:%S", time.localtime(p.opened_at)),
-        } for p in self.positions.values() if p.status == "open"]
+    def get_open_positions(self, client=None) -> List[Dict]:
+        result = []
+        for p in self.positions.values():
+            if p.status != "open":
+                continue
+            entry = {
+                "id": p.id,
+                "symbol": p.symbol,
+                "side": p.side,
+                "notional": round(p.notional, 2),
+                "entry_spot": round(p.entry_spot_price, 6),
+                "entry_futures": round(p.entry_futures_price, 6),
+                "funding_received": round(p.funding_received, 2),
+                "fees_paid": round(p.fees_paid, 2),
+                "opened_at": time.strftime("%H:%M:%S", time.localtime(p.opened_at)),
+            }
+            if client:
+                t = client.tickers.get(p.symbol)
+                if t and t.spot_price > 0 and t.futures_price > 0:
+                    cur_short = ((p.entry_futures_price - t.futures_price) / p.entry_futures_price) * p.notional
+                    cur_long = ((t.spot_price - p.entry_spot_price) / p.entry_spot_price) * p.notional
+                    if p.is_short_perp:
+                        upnl = cur_short + cur_long
+                    else:
+                        upnl = -cur_short + cur_long
+                    cur_basis = ((t.futures_price - t.spot_price) / t.spot_price) * 100
+                    entry_basis = ((p.entry_futures_price - p.entry_spot_price) / p.entry_spot_price) * 100
+                    entry["unrealized_pnl"] = round(upnl, 2)
+                    entry["current_spot"] = t.spot_price
+                    entry["current_futures"] = t.futures_price
+                    entry["current_basis"] = round(cur_basis, 4)
+                    entry["entry_basis"] = round(entry_basis, 4)
+                    entry["total_pnl"] = round(upnl + p.funding_received - p.fees_paid, 2)
+            result.append(entry)
+        return result
 
     async def get_status(self) -> Dict:
         total_fees = sum(p.fees_paid for p in self.positions.values())
@@ -464,13 +428,4 @@ class PaperEngine:
             "return_pct": round(return_pct, 2),
             "auto_trade": self._auto_trade,
             "trade_size_pct": self._trade_size_pct,
-        }
-
-    async def get_config(self) -> Dict:
-        return {
-            "auto_trade": self._auto_trade,
-            "trade_size_pct": self._trade_size_pct,
-            "min_net_profit_usdt": settings.min_net_profit_usdt,
-            "max_concurrent_positions": settings.max_concurrent_positions,
-            "cooldown_seconds": settings.cooldown_seconds,
         }

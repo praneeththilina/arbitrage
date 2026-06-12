@@ -1,35 +1,18 @@
 import asyncio
 import logging
-from typing import Dict, List, Optional, Callable, Tuple, Set
+from typing import Dict, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
-
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-TRIANGLE_TEMPLATES = [
-    ("USDT", "BTC", "ETH"),
-    ("USDT", "BTC", "BNB"),
-    ("USDT", "BTC", "SOL"),
-    ("USDT", "BTC", "XRP"),
-    ("USDT", "BTC", "ADA"),
-    ("USDT", "BTC", "DOGE"),
-    ("USDT", "BTC", "DOT"),
-    ("USDT", "ETH", "BNB"),
-    ("USDT", "ETH", "SOL"),
-    ("USDT", "ETH", "XRP"),
-    ("USDT", "BNB", "SOL"),
-]
-
 MIN_NET_PROFIT_PCT = 0.01
-
 
 @dataclass
 class TrianglePath:
     legs: List[Tuple[str, str, str]]
     description: str
     cross_symbol: str
-
 
 @dataclass
 class TriangularOpportunity:
@@ -43,7 +26,6 @@ class TriangularOpportunity:
     confidence: float
     details: dict = field(default_factory=dict)
 
-
 class TriangularArbitrage:
     def __init__(self, client):
         self.client = client
@@ -54,58 +36,54 @@ class TriangularArbitrage:
     def on_opportunity(self, cb: Callable):
         self._on_opportunity = cb
 
-    def resolve_paths(self, spot_symbols: Set[str]):
+    def resolve_dynamic_paths(self, top_usdt_symbols: List[str], exchange_info: Dict[str, Dict]):
         self.paths = []
-        for quote, base1, base2 in TRIANGLE_TEMPLATES:
-            sym1 = f"{base1}{quote}"
-            sym2 = f"{base2}{quote}"
+        base_assets = []
+        
+        for sym in top_usdt_symbols:
+            info = exchange_info.get(sym)
+            if info and info["quote"] == "USDT":
+                base_assets.append(info["base"])
 
-            if sym1 not in spot_symbols or sym2 not in spot_symbols:
-                continue
+        for i in range(len(base_assets)):
+            for j in range(i + 1, len(base_assets)):
+                base1 = base_assets[i]
+                base2 = base_assets[j]
+                
+                cross_a = f"{base1}{base2}"
+                cross_b = f"{base2}{base1}"
+                
+                cross = cross_a if cross_a in exchange_info else (cross_b if cross_b in exchange_info else None)
+                
+                if not cross:
+                    continue
 
-            cross_a = f"{base1}{base2}"
-            cross_b = f"{base2}{base1}"
-            cross = cross_a if cross_a in spot_symbols else (cross_b if cross_b in spot_symbols else None)
-            
-            if not cross:
-                continue
+                sym1 = f"{base1}USDT"
+                sym2 = f"{base2}USDT"
+                p1_side, p2_side = ("SELL", "BUY") if cross == cross_a else ("BUY", "SELL")
 
-            if cross == cross_a:
-                p1_side = "SELL"
-                p2_side = "BUY"
-            else:
-                p1_side = "BUY"
-                p2_side = "SELL"
+                self.paths.extend([
+                    TrianglePath(
+                        legs=[(sym1, "BUY", f"BUY {base1}"), (cross, p1_side, f"{p1_side} {cross}"), (sym2, "SELL", f"SELL {base2}")],
+                        description=f"{base1}/USDT -> {cross} -> {base2}/USDT",
+                        cross_symbol=cross,
+                    ),
+                    TrianglePath(
+                        legs=[(sym2, "BUY", f"BUY {base2}"), (cross, p2_side, f"{p2_side} {cross}"), (sym1, "SELL", f"SELL {base1}")],
+                        description=f"{base2}/USDT -> {cross} -> {base1}/USDT",
+                        cross_symbol=cross,
+                    )
+                ])
 
-            self.paths.append(TrianglePath(
-                legs=[
-                    (sym1, "BUY", f"BUY {base1} with {quote}"),
-                    (cross, p1_side, f"{p1_side} {cross}"),
-                    (sym2, "SELL", f"SELL {base2} for {quote}"),
-                ],
-                description=f"{base1}/{quote} -> {cross} -> {base2}/{quote}",
-                cross_symbol=cross,
-            ))
-            self.paths.append(TrianglePath(
-                legs=[
-                    (sym2, "BUY", f"BUY {base2} with {quote}"),
-                    (cross, p2_side, f"{p2_side} {cross}"),
-                    (sym1, "SELL", f"SELL {base1} for {quote}"),
-                ],
-                description=f"{base2}/{quote} -> {cross} -> {base1}/{quote}",
-                cross_symbol=cross,
-            ))
-
-        logger.info(f"Resolved {len(self.paths)} triangle paths")
+        logger.info(f"Resolved {len(self.paths)} dynamic triangle paths")
 
     async def start(self):
         self._running = True
         while self._running:
             for path in self.paths:
                 op = self._evaluate_path(path)
-                if op:
-                    if self._on_opportunity:
-                        asyncio.create_task(self._on_opportunity(op))
+                if op and self._on_opportunity:
+                    asyncio.create_task(self._on_opportunity(op))
             await asyncio.sleep(settings.update_interval_ms / 1000)
 
     def stop(self):
@@ -115,9 +93,7 @@ class TriangularArbitrage:
         t = self.client.tickers.get(symbol)
         if not t:
             return None
-        if side == "BUY":
-            return t.ask if t.ask > 0 else t.spot_price
-        return t.bid if t.bid > 0 else t.spot_price
+        return t.ask if side == "BUY" and t.ask > 0 else (t.bid if t.bid > 0 else t.spot_price)
 
     def _evaluate_path(self, path: TrianglePath) -> Optional[TriangularOpportunity]:
         prices = []
@@ -132,25 +108,13 @@ class TriangularArbitrage:
         fee_multiplier = 1.0 - settings.taker_fee
 
         for i, (sym, side, desc) in enumerate(path.legs):
-            if side == "BUY":
-                rate = (rate / prices[i]) * fee_multiplier
-            else:
-                rate = (rate * prices[i]) * fee_multiplier
-                
-            leg_details.append({
-                "symbol": sym,
-                "side": side,
-                "price": prices[i],
-                "description": desc,
-            })
+            rate = (rate / prices[i]) * fee_multiplier if side == "BUY" else (rate * prices[i]) * fee_multiplier
+            leg_details.append({"symbol": sym, "side": side, "price": prices[i], "description": desc})
 
         profit_pct = (rate - 1.0) * 100
 
         if profit_pct <= MIN_NET_PROFIT_PCT:
             return None
-
-        confidence = min(profit_pct / 2, 0.95)
-        logger.info(f"Net triangular opportunity found: {path.description} profit={profit_pct:.4f}% rate={rate:.6f}")
 
         return TriangularOpportunity(
             symbol_a=path.legs[0][0],
@@ -160,10 +124,6 @@ class TriangularArbitrage:
             effective_rate=rate,
             profit_pct=profit_pct,
             legs=leg_details,
-            confidence=confidence,
-            details={
-                "prices": prices,
-                "gross_rate": rate / (fee_multiplier ** 3),
-                "net_rate": rate,
-            },
+            confidence=min(profit_pct / 2, 0.95),
+            details={"prices": prices, "net_rate": rate},
         )

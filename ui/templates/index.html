@@ -35,7 +35,6 @@ tr:hover td{background:#1e293b}
 .opportunity .title{font-weight:600;margin-bottom:4px}
 .opportunity .detail{display:flex;gap:12px;color:#94a3b8;flex-wrap:wrap}
 .opportunity .detail span{white-space:nowrap}
-
 .controls{grid-column:1/-1;display:flex;gap:8px;padding:6px 16px;background:#111827;border-radius:8px;align-items:center;flex-wrap:wrap}
 .controls button{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s}
 .controls button:hover{opacity:.8}
@@ -43,7 +42,6 @@ tr:hover td{background:#1e293b}
 .controls input[type=range]{width:100px;height:4px;-webkit-appearance:none;background:#334155;border-radius:2px;outline:none}
 .controls input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#60a5fa;cursor:pointer}
 .controls .size-val{color:#60a5fa;font-weight:700;font-size:13px;min-width:40px;text-align:center}
-
 .btn-start{background:#22c55e;color:#0a0e17}
 .btn-stop{background:#ef4444;color:#fff}
 .btn-auto-on{background:#22c55e;color:#0a0e17}
@@ -141,46 +139,55 @@ tr:hover td{background:#1e293b}
 </div>
 
 <script>
-const ws = new WebSocket(`ws://${location.host}/ws`);
+let ws;
 let pingTime = 0;
 let tradeCount = 0;
+let reconnectDelay = 1000;
+let pingInterval;
 
-ws.onopen = () => {
-  document.getElementById('wsDot').className = 'dot green';
-  document.getElementById('wsStatus').textContent = 'connected';
-};
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
 
-ws.onclose = () => {
-  document.getElementById('wsDot').className = 'dot red';
-  document.getElementById('wsStatus').textContent = 'disconnected';
-  setTimeout(() => location.reload(), 3000);
-};
+  ws.onopen = () => {
+    document.getElementById('wsDot').className = 'dot green';
+    document.getElementById('wsStatus').textContent = 'connected';
+    reconnectDelay = 1000;
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        pingTime = Date.now();
+        ws.send(JSON.stringify({action:'ping'}));
+      }
+    }, 5000);
+  };
 
-ws.onmessage = (e) => {
-  const msg = JSON.parse(e.data);
-  switch(msg.type) {
-    case 'tickers': updateTickers(msg.data); break;
-    case 'account': updateAccount(msg.data); break;
-    case 'opportunity': addOpportunity(msg); break;
-    case 'trade': addTrade(msg.data); break;
-    case 'config_ack':
-      if (msg.auto_trade !== undefined) updateAutoTradeUI(msg.auto_trade);
-      if (msg.trade_size_pct !== undefined) updateSizeUI(msg.trade_size_pct);
-      break;
-    case 'pong': {
-      const lat = Date.now() - pingTime;
-      document.getElementById('wsLatency').textContent = lat;
-      break;
+  ws.onclose = () => {
+    document.getElementById('wsDot').className = 'dot red';
+    document.getElementById('wsStatus').textContent = 'disconnected';
+    clearInterval(pingInterval);
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    switch(msg.type) {
+      case 'tickers': updateTickers(msg.data); break;
+      case 'account': updateAccount(msg.data); break;
+      case 'opportunity': addOpportunity(msg); break;
+      case 'trade': addTrade(msg.data); break;
+      case 'config_ack':
+        if (msg.auto_trade !== undefined) updateAutoTradeUI(msg.auto_trade);
+        if (msg.trade_size_pct !== undefined) updateSizeUI(msg.trade_size_pct);
+        break;
+      case 'pong':
+        const lat = Date.now() - pingTime;
+        document.getElementById('wsLatency').textContent = lat;
+        break;
     }
-  }
-};
+  };
+}
 
-setInterval(() => {
-  if (ws.readyState === WebSocket.OPEN) {
-    pingTime = Date.now();
-    ws.send(JSON.stringify({action:'ping'}));
-  }
-}, 5000);
+connect();
 
 function fmt(v) {
   if (v === undefined || v === null) return '-';
@@ -247,8 +254,8 @@ function updateAccount(data) {
     document.getElementById('triPaths').textContent = 'Monitoring ' + data.triangular_paths + ' triangle paths';
   }
   const pnlEl = document.getElementById('acctPnl');
-  pnlEl.textContent = fmt(data.total_pnl);
-  pnlEl.className = 'value ' + (data.total_pnl >= 0 ? 'green' : 'red');
+  pnlEl.textContent = fmt(data.total_return);
+  pnlEl.className = 'value ' + (data.total_return >= 0 ? 'green' : 'red');
   const retEl = document.getElementById('acctReturn');
   retEl.textContent = fmt(data.return_pct) + '%';
   retEl.className = 'value ' + (data.return_pct >= 0 ? 'green' : 'red');
@@ -267,11 +274,23 @@ function updateAccount(data) {
   if (data.open_positions_list) {
     let html = '';
     for (const p of data.open_positions_list) {
-      html += `<span style="display:inline-block;background:#1a2332;padding:3px 8px;border-radius:4px;margin:2px 4px 2px 0;border-left:3px solid #f59e0b">
-        ${p.symbol} <span class="${p.side.includes('short')?'red':'green'}">${p.side.includes('short')?'SHORT':'LONG'}</span>
-        $${p.notional} Fund:$${p.funding_received}
-        <button onclick="closePosition('${p.id}')" style="background:transparent;border:1px solid #ef4444;color:#ef4444;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px;margin-left:4px">X</button>
-      </span>`;
+      const uPNL = p.unrealized_pnl;
+      const uPNLCls = uPNL >= 0 ? 'green' : 'red';
+      const basisDiff = p.current_basis !== undefined ? (p.current_basis - p.entry_basis).toFixed(3) + '%' : '-';
+      html += `<div style="display:inline-block;background:#1a2332;padding:4px 8px;border-radius:4px;margin:2px 4px 2px 0;border-left:3px solid #f59e0b;font-size:12px;min-width:280px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>${p.symbol}</strong>
+          <span class="${p.side.includes('short')?'red':'green'}">${p.side.includes('short')?'SHORT':'LONG'}</span>
+          <span>Not: $${p.notional}</span>
+          <button onclick="closePosition('${p.id}')" style="background:transparent;border:1px solid #ef4444;color:#ef4444;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px">X</button>
+        </div>
+        <div style="color:#94a3b8;font-size:11px;margin-top:2px">
+          uPnL: <span class="${uPNLCls}">$${fmt(uPNL)}</span>
+          | Total: <span class="${(p.total_pnl||0) >= 0 ? 'green' : 'red'}">$${fmt(p.total_pnl||0)}</span>
+          | Basis: ${p.current_basis || '-'}% (entry: ${p.entry_basis || '-'}%)
+          | Fund: $${p.funding_received}
+        </div>
+      </div>`;
     }
     document.getElementById('openPositions').innerHTML = html || '<span style="color:#64748b">No open positions</span>';
   }
@@ -311,11 +330,14 @@ function addOpportunity(msg) {
   const id = strat === 'funding' ? 'fundingOpps' : 'triangularOpps';
   const container = document.getElementById(id);
   if (!container) return;
+
+  const key = strat === 'funding' ? d.symbol : d.path;
+  const existing = container.querySelector(`[data-key="${key}"]`);
   let html = '';
 
   if (strat === 'funding') {
     const nf = d.next_funding_time ? fmtCountdown(d.next_funding_time - Date.now()) : '-';
-    html = `<div class="opportunity funding">
+    html = `<div class="opportunity funding" data-key="${key}">
       <div class="title"><span class="badge ${d.action.includes('short') ? 'sell' : 'buy'}">${d.action}</span> ${d.symbol}</div>
       <div class="detail">
         <span>FR: <strong class="${d.funding_rate > 0 ? 'green' : 'red'}">${fmtRate(d.funding_rate)}</strong></span>
@@ -326,7 +348,7 @@ function addOpportunity(msg) {
       </div>
     </div>`;
   } else {
-    html = `<div class="opportunity triangular">
+    html = `<div class="opportunity triangular" data-key="${key}">
       <div class="title">${d.path}</div>
       <div class="detail">
         <span>Profit: <strong class="green">${d.profit_pct}%</strong></span>
@@ -336,9 +358,13 @@ function addOpportunity(msg) {
     </div>`;
   }
 
-  container.insertAdjacentHTML('afterbegin', html);
-  while (container.children.length > 50) {
-    container.removeChild(container.lastChild);
+  if (existing) {
+    existing.outerHTML = html;
+  } else {
+    container.insertAdjacentHTML('afterbegin', html);
+    while (container.children.length > 50) {
+      container.removeChild(container.lastChild);
+    }
   }
 }
 

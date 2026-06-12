@@ -1,10 +1,11 @@
 import asyncio
+import logging
 from typing import Optional, Callable
 from dataclasses import dataclass, field
 
 from config import settings
-from exchange.client import BinanceClient, TickerData
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class FundingOpportunity:
@@ -19,9 +20,8 @@ class FundingOpportunity:
     confidence: float
     details: dict = field(default_factory=dict)
 
-
 class FundingArbitrage:
-    def __init__(self, client: BinanceClient):
+    def __init__(self, client):
         self.client = client
         self._running = False
         self._on_opportunity: Optional[Callable] = None
@@ -34,16 +34,15 @@ class FundingArbitrage:
         while self._running:
             for sym, t in list(self.client.tickers.items()):
                 op = self._evaluate(sym, t)
-                if op:
-                    if self._on_opportunity:
-                        asyncio.create_task(self._on_opportunity(op))
+                if op and self._on_opportunity:
+                    asyncio.create_task(self._on_opportunity(op))
             await asyncio.sleep(settings.update_interval_ms / 1000)
 
     def stop(self):
         self._running = False
 
-    def _evaluate(self, symbol: str, t: TickerData) -> Optional[FundingOpportunity]:
-        if t.spot_price <= 0 or t.futures_price <= 0:
+    def _evaluate(self, symbol: str, t) -> Optional[FundingOpportunity]:
+        if not t.spot_price or not t.futures_price or t.spot_price <= 0 or t.futures_price <= 0:
             return None
 
         fr = t.funding_rate
@@ -56,7 +55,7 @@ class FundingArbitrage:
         spot_bid = t.bid if t.bid > 0 else t.spot_price
         
         futures_fee_rate = 0.0005
-        spot_fee_rate = 0.001
+        spot_fee_rate = settings.taker_fee
         total_friction_pct = (spot_fee_rate + futures_fee_rate) * 200
 
         if fr > 0:
