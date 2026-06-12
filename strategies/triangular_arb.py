@@ -1,12 +1,11 @@
 import asyncio
-import itertools
-import math
-from typing import Dict, List, Optional, Callable, Tuple
+import logging
+from typing import Dict, List, Optional, Callable, Tuple, Set
 from dataclasses import dataclass, field
 
 from config import settings
-from exchange.client import BinanceClient
 
+logger = logging.getLogger(__name__)
 
 TRIANGLE_TEMPLATES = [
     ("USDT", "BTC", "ETH"),
@@ -16,19 +15,20 @@ TRIANGLE_TEMPLATES = [
     ("USDT", "BTC", "ADA"),
     ("USDT", "BTC", "DOGE"),
     ("USDT", "BTC", "DOT"),
-    ("USDT", "BTC", "MATIC"),
     ("USDT", "ETH", "BNB"),
     ("USDT", "ETH", "SOL"),
     ("USDT", "ETH", "XRP"),
     ("USDT", "BNB", "SOL"),
-    ("USDT", "SOL", "XRP"),
 ]
+
+MIN_TRIANGULAR_SPREAD_PCT = 0.01
 
 
 @dataclass
 class TrianglePath:
     legs: List[Tuple[str, str, str]]
     description: str
+    cross_symbol: str
 
 
 @dataclass
@@ -44,43 +44,59 @@ class TriangularOpportunity:
     details: dict = field(default_factory=dict)
 
 
-def build_triangle_paths(templates: List[Tuple[str, str, str]]) -> List[TrianglePath]:
-    paths = []
-    for quote, base1, base2 in templates:
-        sym1 = f"{base1}{quote}"
-        sym2 = f"{base2}{quote}"
-        cross = f"{base2}{base1}" if f"{base2}{base1}" < f"{base1}{base2}" else f"{base1}{base2}"
-        cross_inv = f"{base1}{base2}"
-
-        pair12 = (sym1, sym2)
-        paths.append(TrianglePath(
-            legs=[
-                (sym1, "BUY", f"BUY {base1} with {quote}"),
-                (cross, "BUY" if cross.endswith(base2) else "SELL", f"BUY {base2} with {base1}"),
-                (sym2, "SELL", f"SELL {base2} for {quote}"),
-            ],
-            description=f"{base1}/{quote} -> {base2}/{base1} -> {base2}/{quote}"
-        ))
-        paths.append(TrianglePath(
-            legs=[
-                (sym2, "BUY", f"BUY {base2} with {quote}"),
-                (cross_inv, "BUY" if cross_inv.endswith(base1) else "SELL", f"BUY {base1} with {base2}"),
-                (sym1, "SELL", f"SELL {base1} for {quote}"),
-            ],
-            description=f"{base2}/{quote} -> {base1}/{base2} -> {base1}/{quote}"
-        ))
-    return paths
-
-
 class TriangularArbitrage:
-    def __init__(self, client: BinanceClient):
+    def __init__(self, client):
         self.client = client
         self._running = False
         self._on_opportunity: Optional[Callable] = None
-        self.paths = build_triangle_paths(TRIANGLE_TEMPLATES)
+        self.paths: List[TrianglePath] = []
 
     def on_opportunity(self, cb: Callable):
         self._on_opportunity = cb
+
+    def resolve_paths(self, spot_symbols: Set[str]):
+        self.paths = []
+        for quote, base1, base2 in TRIANGLE_TEMPLATES:
+            sym1 = f"{base1}{quote}"
+            sym2 = f"{base2}{quote}"
+
+            if sym1 not in spot_symbols or sym2 not in spot_symbols:
+                continue
+
+            cross_a = f"{base1}{base2}"
+            cross_b = f"{base2}{base1}"
+            cross = cross_a if cross_a in spot_symbols else (cross_b if cross_b in spot_symbols else None)
+            if not cross:
+                logger.debug(f"No cross pair for {base1}/{base2}, skipping")
+                continue
+
+            if cross == cross_a:
+                p1_side = "SELL"
+                p2_side = "BUY"
+            else:
+                p1_side = "BUY"
+                p2_side = "SELL"
+
+            self.paths.append(TrianglePath(
+                legs=[
+                    (sym1, "BUY", f"BUY {base1} with {quote}"),
+                    (cross, p1_side, f"{p1_side} {cross}"),
+                    (sym2, "SELL", f"SELL {base2} for {quote}"),
+                ],
+                description=f"{base1}/{quote} -> {cross} -> {base2}/{quote}",
+                cross_symbol=cross,
+            ))
+            self.paths.append(TrianglePath(
+                legs=[
+                    (sym2, "BUY", f"BUY {base2} with {quote}"),
+                    (cross, p2_side, f"{p2_side} {cross}"),
+                    (sym1, "SELL", f"SELL {base1} for {quote}"),
+                ],
+                description=f"{base2}/{quote} -> {cross} -> {base1}/{quote}",
+                cross_symbol=cross,
+            ))
+
+        logger.info(f"Resolved {len(self.paths)} triangle paths from {len(TRIANGLE_TEMPLATES)} templates")
 
     async def start(self):
         self._running = True
@@ -127,7 +143,7 @@ class TriangularArbitrage:
 
         profit_pct = (rate - 1.0) * 100
 
-        if profit_pct <= settings.min_spread_pct:
+        if profit_pct <= MIN_TRIANGULAR_SPREAD_PCT:
             return None
 
         confidence = min(profit_pct / 10, 0.95)

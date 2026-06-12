@@ -77,7 +77,7 @@ tr:hover td{background:#1e293b}
     <h2>Tickers</h2>
     <div class="panel-body">
       <table>
-        <thead><tr><th>Symbol</th><th>Spot</th><th>Futures</th><th>Basis%</th><th>Fund Rate</th><th>Vol 24h</th></tr></thead>
+        <thead><tr><th>Symbol</th><th>Spot</th><th>Futures</th><th>Basis%</th><th>Fund Rate</th><th>Next Funding</th><th>Vol 24h</th></tr></thead>
         <tbody id="tickerTable"></tbody>
       </table>
     </div>
@@ -189,6 +189,16 @@ function fmtRate(v) {
   return (v * 100).toFixed(4) + '%';
 }
 
+function fmtCountdown(ms) {
+  if (ms <= 0) return 'now';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  if (h > 0) return h+'h '+m+'m';
+  if (m > 0) return m+'m '+s+'s';
+  return s+'s';
+}
+
 function fmtUptime(secs) {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -206,12 +216,14 @@ function updateTickers(data) {
     const basisCls = basis !== '-' && parseFloat(basis) > 0 ? 'green' : basis !== '-' && parseFloat(basis) < 0 ? 'red' : '';
     const fr = t.funding ? (t.funding * 100).toFixed(4) : '-';
     const frCls = t.funding > 0 ? 'green' : t.funding < 0 ? 'red' : '';
+    const nextFund = t.next_funding_time ? fmtCountdown(t.next_funding_time - Date.now()) : '-';
     html += `<tr>
       <td><strong>${sym}</strong></td>
       <td class="price blue">${fmt(t.spot)}</td>
       <td class="price">${fmt(t.futures)}</td>
       <td class="${basisCls}">${basis}%</td>
       <td class="${frCls}">${fr}%</td>
+      <td style="color:#64748b;font-size:11px">${nextFund}</td>
       <td style="color:#64748b">${t.spot_vol ? (t.spot_vol/1e6).toFixed(1)+'M' : '-'}</td>
     </tr>`;
   }
@@ -269,14 +281,15 @@ function addOpportunity(msg) {
   let html = '';
 
   if (strat === 'funding') {
+    const nf = d.next_funding_time ? fmtCountdown(d.next_funding_time - Date.now()) : '-';
     html = `<div class="opportunity funding">
       <div class="title"><span class="badge ${d.action.includes('short') ? 'sell' : 'buy'}">${d.action}</span> ${d.symbol}</div>
       <div class="detail">
         <span>FR: <strong class="${d.funding_rate > 0 ? 'green' : 'red'}">${fmtRate(d.funding_rate)}</strong></span>
         <span>Basis: <strong>${d.basis_pct}%</strong></span>
         <span class="badge apr">APR: ${fmt(d.expected_apr)}%</span>
-        <span>Spot: ${fmt(d.spot_price)}</span>
-        <span>Fut: ${fmt(d.futures_price)}</span>
+        <span>Next: ${nf}</span>
+        <span>Pays every 8h</span>
       </div>
     </div>`;
   } else {

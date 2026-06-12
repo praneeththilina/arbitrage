@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse
 from config import settings
 from exchange.client import BinanceClient
 from strategies.funding_arb import FundingArbitrage
-from strategies.triangular_arb import TriangularArbitrage
+from strategies.triangular_arb import TriangularArbitrage, TRIANGLE_TEMPLATES
 from trading.engine import PaperEngine
 from database import init_db, get_recent_opportunities, get_open_orders, get_balances
 
@@ -71,11 +71,22 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"Tracking {len(symbols)} symbols (spot+futures): {symbols}")
 
+    spot_exchange = await client.get_exchange_info()
+    spot_symbols = {s["symbol"] for s in spot_exchange}
+
+    cross_symbols = set()
+    for _, b1, b2 in TRIANGLE_TEMPLATES:
+        for sym in [f"{b1}{b2}", f"{b2}{b1}"]:
+            if sym in spot_symbols:
+                cross_symbols.add(sym)
+    logger.info(f"Cross-pair symbols to track: {cross_symbols}")
+
     paper = PaperEngine()
     await paper.start()
 
     funding_strategy = FundingArbitrage(client)
     triangular_strategy = TriangularArbitrage(client)
+    triangular_strategy.resolve_paths(spot_symbols)
 
     async def on_funding_op(op):
         db_op_id = None
@@ -102,6 +113,7 @@ async def lifespan(app: FastAPI):
                 "confidence": round(op.confidence, 4),
                 "details": op.details,
                 "db_id": db_op_id,
+                "next_funding_time": op.details.get("next_funding_time", 0),
             }
         })
 
@@ -147,7 +159,7 @@ async def lifespan(app: FastAPI):
     triangular_strategy.on_opportunity(on_triangular_op)
     paper.on_trade(on_trade)
 
-    asyncio.create_task(client.start(symbols))
+    asyncio.create_task(client.start(symbols, extra_spot_symbols=list(cross_symbols)))
     asyncio.create_task(ticker_broadcaster())
 
     yield
@@ -171,6 +183,7 @@ async def ticker_broadcaster():
                     "spot": t.spot_price,
                     "futures": t.futures_price,
                     "funding": t.funding_rate,
+                    "next_funding_time": t.next_funding_time,
                     "spot_vol": t.spot_volume_24h,
                     "futures_vol": t.futures_volume_24h,
                     "bid": t.bid,

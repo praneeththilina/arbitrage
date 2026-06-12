@@ -110,7 +110,7 @@ class BinanceClient:
         common = [s for s in top if s in futures_symbols]
         return common[:limit]
 
-    async def get_funding_rates(self, symbols: List[str]) -> Dict[str, float]:
+    async def get_funding_rates(self, symbols: List[str]) -> Dict[str, dict]:
         async with httpx.AsyncClient() as cli:
             resp = await cli.get(f"{self.FUTURES_REST_BASE}/fapi/v1/premiumIndex")
             data = resp.json()
@@ -118,7 +118,10 @@ class BinanceClient:
         result = {}
         for item in data:
             if item["symbol"] in symbols:
-                result[item["symbol"]] = float(item["lastFundingRate"])
+                result[item["symbol"]] = {
+                    "rate": float(item["lastFundingRate"]),
+                    "next_time": int(item["nextFundingTime"]),
+                }
         return result
 
     def _sign_request(self, params: Dict) -> Dict:
@@ -176,12 +179,10 @@ class BinanceClient:
         while self._running:
             try:
                 rates = await self.get_funding_rates(symbols)
-                for sym, rate in rates.items():
+                for sym, info in rates.items():
                     if sym in self.tickers:
-                        self.tickers[sym].funding_rate = rate
-                        self._emit("funding", (sym, rate, 0))
-                if not rates:
-                    logger.warning("Funding rate poll returned empty")
+                        self.tickers[sym].funding_rate = info["rate"]
+                        self.tickers[sym].next_funding_time = info["next_time"]
             except Exception as e:
                 logger.error(f"Funding rate poll error: {e}")
             await asyncio.sleep(10)
@@ -210,10 +211,11 @@ class BinanceClient:
         t.ask = float(d["a"])
         self._emit("ticker", (sym, "futures", t))
 
-    async def start(self, symbols: List[str]):
+    async def start(self, symbols: List[str], extra_spot_symbols: List[str] = None):
         self._running = True
+        all_spot = list(set(symbols + (extra_spot_symbols or [])))
         await asyncio.gather(
-            self._spot_ws_loop(symbols),
+            self._spot_ws_loop(all_spot),
             self._futures_ws_loop(symbols),
             self._funding_rate_poller(symbols),
         )
