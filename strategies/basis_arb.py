@@ -1,26 +1,30 @@
 import asyncio
 import logging
-from typing import Optional, Callable
 from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
-class FundingOpportunity:
+class BasisOpportunity:
     symbol: str
-    funding_rate: float
-    basis_pct: float
-    net_basis_pct: float
     spot_price: float
     futures_price: float
+    basis_pct: float
+    net_basis_pct: float
     action: str
-    expected_apr: float
+    expected_profit_pct: float
+    expected_profit_usdt: float
     confidence: float
     details: dict = field(default_factory=dict)
 
-class FundingArbitrage:
+
+class BasisArbitrage:
+    """Scan Binance spot/perpetual pairs for convergence arbitrage candidates."""
+
     def __init__(self, client):
         self.client = client
         self._running = False
@@ -35,11 +39,11 @@ class FundingArbitrage:
 
     async def start(self):
         if self._running:
-            logger.info("Funding arbitrage scanner is already running")
+            logger.info("Basis arbitrage scanner is already running")
             return
 
         self._running = True
-        logger.info("Funding arbitrage scanner started")
+        logger.info("Basis arbitrage scanner started")
         try:
             while self._running:
                 ops = []
@@ -48,70 +52,64 @@ class FundingArbitrage:
                     if op:
                         ops.append(op)
 
-                ops.sort(key=lambda x: x.expected_apr, reverse=True)
+                ops.sort(key=lambda x: x.expected_profit_pct, reverse=True)
                 for op in ops[:5]:
                     if self._on_opportunity:
                         asyncio.create_task(self._on_opportunity(op))
                 await asyncio.sleep(settings.update_interval_ms / 1000)
         finally:
             self._running = False
-            logger.info("Funding arbitrage scanner stopped")
+            logger.info("Basis arbitrage scanner stopped")
 
     def stop(self):
         self._running = False
 
-    def _evaluate(self, symbol: str, t) -> Optional[FundingOpportunity]:
+    def _evaluate(self, symbol: str, t) -> Optional[BasisOpportunity]:
         if not t.spot_price or not t.futures_price or t.spot_price <= 0 or t.futures_price <= 0:
             return None
 
-        fr = t.funding_rate
-        abs_fr = abs(fr)
-
-        # Removed funding rate filter for visualization
-
         spot_ask = t.ask if t.ask > 0 else t.spot_price
         spot_bid = t.bid if t.bid > 0 else t.spot_price
+        futures_price = t.futures_price
 
-        futures_fee_rate = 0.0005
-        spot_fee_rate = settings.taker_fee
-        total_friction_pct = (spot_fee_rate + futures_fee_rate) * 200
+        # Round-trip spot + futures taker fees plus configurable slippage buffer.
+        total_friction_pct = ((settings.taker_fee + 0.0005) * 2 + (settings.slippage_pct / 100.0)) * 100
 
-        if fr > 0:
+        premium_pct = ((futures_price - spot_ask) / spot_ask) * 100
+        discount_pct = ((spot_bid - futures_price) / futures_price) * 100
+
+        if premium_pct >= discount_pct:
             action = "short_perp_long_spot"
-            raw_basis = ((t.futures_price - spot_ask) / spot_ask) * 100
-            net_basis = raw_basis - total_friction_pct
+            raw_basis = premium_pct
         else:
             action = "long_perp_short_spot"
-            raw_basis = ((spot_bid - t.futures_price) / t.futures_price) * 100
-            net_basis = raw_basis - total_friction_pct
+            raw_basis = discount_pct
 
-        # Removed hard filters to allow visualization of top opportunities
-
-        funding_per_day = abs_fr * 3
-        expected_apr = funding_per_day * 365 * 100
-
-        funding_pos = "longs_pay" if fr > 0 else "shorts_pay"
-        confidence = max(0.0, min(abs_fr * 500, 0.95))
+        net_basis = raw_basis - total_friction_pct
+        expected_profit_pct = max(net_basis, 0.0)
+        expected_profit_usdt = settings.max_position_size_usdt * (expected_profit_pct / 100.0)
+        confidence = max(0.0, min(expected_profit_pct / max(settings.min_basis_profit_pct, 0.0001), 0.95))
 
         details = {
-            "funding_rate": fr,
-            "funding_positions": funding_pos,
             "raw_basis_pct": round(raw_basis, 4),
             "net_basis_pct": round(net_basis, 4),
+            "total_friction_pct": round(total_friction_pct, 4),
+            "premium_pct": round(premium_pct, 4),
+            "discount_pct": round(discount_pct, 4),
             "action": action,
-            "next_funding_time": t.next_funding_time,
             "spot_volume_24h": t.spot_volume_24h,
+            "futures_volume_24h": t.futures_volume_24h,
         }
 
-        return FundingOpportunity(
+        return BasisOpportunity(
             symbol=symbol,
-            funding_rate=fr,
+            spot_price=t.spot_price,
+            futures_price=futures_price,
             basis_pct=raw_basis,
             net_basis_pct=net_basis,
-            spot_price=t.spot_price,
-            futures_price=t.futures_price,
             action=action,
-            expected_apr=expected_apr,
+            expected_profit_pct=expected_profit_pct,
+            expected_profit_usdt=expected_profit_usdt,
             confidence=confidence,
             details=details,
         )

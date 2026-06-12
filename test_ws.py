@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import json
 
-async def test_futures_auth():
+async def check_futures_auth():
     url = "wss://fstream-auth.binance.com/stream?streams=btcusdt@markPrice"
     try:
         async with websockets.connect(url) as ws:
@@ -12,4 +12,5 @@ async def test_futures_auth():
     except Exception as e:
         print("Auth Error:", e)
 
-asyncio.run(test_futures_auth())
+if __name__ == "__main__":
+    asyncio.run(check_futures_auth())
