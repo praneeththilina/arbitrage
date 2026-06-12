@@ -89,7 +89,7 @@ class TriangularArbitrage:
                 op = self._evaluate_path(path)
                 if op:
                     if self._on_opportunity:
-                        self._on_opportunity(op)
+                        asyncio.create_task(self._on_opportunity(op))
             await asyncio.sleep(settings.update_interval_ms / 1000)
 
     def stop(self):

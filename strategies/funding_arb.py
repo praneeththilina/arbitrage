@@ -1,6 +1,6 @@
 import asyncio
 import math
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, Awaitable
 from dataclasses import dataclass, field
 
 from config import settings
@@ -36,7 +36,7 @@ class FundingArbitrage:
                 op = self._evaluate(sym, t)
                 if op:
                     if self._on_opportunity:
-                        self._on_opportunity(op)
+                        asyncio.create_task(self._on_opportunity(op))
             await asyncio.sleep(settings.update_interval_ms / 1000)
 
     def stop(self):

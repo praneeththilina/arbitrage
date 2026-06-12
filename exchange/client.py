@@ -155,9 +155,7 @@ class BinanceClient:
             asyncio.create_task(self._futures_batch_loop(batch))
 
     async def _futures_batch_loop(self, symbols: List[str]):
-        ticker_streams = "/".join(f"{s.lower()}@ticker" for s in symbols)
-        mark_streams = "/".join(f"{s.lower()}@markPrice" for s in symbols)
-        streams = f"{ticker_streams}/{mark_streams}"
+        streams = "/".join(f"{s.lower()}@bookTicker" for s in symbols)
         uri = f"{self.FUTURES_BASE}/stream?streams={streams}"
         while self._running:
             try:
@@ -165,12 +163,7 @@ class BinanceClient:
                     async for msg in ws:
                         data = json.loads(msg)
                         if data.get("stream") and data.get("data"):
-                            stream = data["stream"]
-                            d = data["data"]
-                            if "markPrice" in stream:
-                                self._handle_mark_price(d)
-                            else:
-                                self._handle_futures_ticker(d)
+                            self._handle_futures_book(data["data"])
             except websockets.ConnectionClosed as e:
                 if self._running:
                     await asyncio.sleep(5)
@@ -178,6 +171,20 @@ class BinanceClient:
                 logger.error(f"Futures WS error: {e}")
                 if self._running:
                     await asyncio.sleep(10)
+
+    async def _funding_rate_poller(self, symbols: List[str]):
+        while self._running:
+            try:
+                rates = await self.get_funding_rates(symbols)
+                for sym, rate in rates.items():
+                    if sym in self.tickers:
+                        self.tickers[sym].funding_rate = rate
+                        self._emit("funding", (sym, rate, 0))
+                if not rates:
+                    logger.warning("Funding rate poll returned empty")
+            except Exception as e:
+                logger.error(f"Funding rate poll error: {e}")
+            await asyncio.sleep(10)
 
     def _handle_spot_ticker(self, d: Dict):
         sym = d["s"]
@@ -192,31 +199,23 @@ class BinanceClient:
         t.last_price = float(d["c"])
         self._emit("ticker", (sym, "spot", t))
 
-    def _handle_futures_ticker(self, d: Dict):
+    def _handle_futures_book(self, d: Dict):
         sym = d["s"]
         if sym not in self.tickers:
             self.tickers[sym] = TickerData(symbol=sym)
         t = self.tickers[sym]
-        t.futures_price = float(d["c"])
-        t.futures_volume_24h = float(d["q"])
-        t.futures_change_24h = float(d["P"])
+        mid = (float(d["b"]) + float(d["a"])) / 2
+        t.futures_price = mid
+        t.bid = float(d["b"])
+        t.ask = float(d["a"])
         self._emit("ticker", (sym, "futures", t))
-
-    def _handle_mark_price(self, d: Dict):
-        sym = d["s"]
-        if sym not in self.tickers:
-            self.tickers[sym] = TickerData(symbol=sym)
-        t = self.tickers[sym]
-        t.funding_rate = float(d["r"])
-        t.next_funding_time = int(d["T"])
-        t.mark_price = float(d["p"])
-        self._emit("funding", (sym, t.funding_rate, t.next_funding_time))
 
     async def start(self, symbols: List[str]):
         self._running = True
         await asyncio.gather(
             self._spot_ws_loop(symbols),
             self._futures_ws_loop(symbols),
+            self._funding_rate_poller(symbols),
         )
 
     async def stop(self):

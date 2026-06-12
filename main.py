@@ -23,14 +23,19 @@ def log_unhandled(exctype, value, tb):
 
 
 def free_port(port: int):
-    for proc in subprocess.check_output("netstat -ano", shell=True).decode().splitlines():
-        if f":{port}" in proc and "LISTENING" in proc:
-            pid = proc.strip().rsplit(" ", 1)[-1]
-            try:
-                subprocess.run(f"taskkill //f //pid {pid}", shell=True, capture_output=True)
-                logging.info(f"Killed old process PID {pid} holding port {port}")
-            except:
-                pass
+    try:
+        output = subprocess.check_output(
+            f"netstat -ano | findstr \":{port}\"", shell=True
+        ).decode()
+        for line in output.splitlines():
+            if "LISTENING" in line:
+                parts = line.strip().split()
+                pid = parts[-1]
+                subprocess.run(["taskkill", "/f", "/pid", pid],
+                               capture_output=True)
+                logging.info(f"Killed PID {pid} holding port {port}")
+    except subprocess.CalledProcessError:
+        pass
 
 
 sys.excepthook = log_unhandled
