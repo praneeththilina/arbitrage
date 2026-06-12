@@ -239,3 +239,15 @@ class BinanceClient:
         }
         # Ignored if already set
         return await self._request("POST", f"{self.fapi_url}/fapi/v1/marginType", signed=True, params=params)
+
+    async def get_historical_klines(self, symbol: str, interval: str = "1h", limit: int = 300) -> List[List]:
+        url = f"{self.spot_url}/api/v3/klines"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit
+        }
+        data = await self._request("GET", url, params=params)
+        if isinstance(data, list):
+            return data
+        return []

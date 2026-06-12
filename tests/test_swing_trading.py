@@ -9,6 +9,9 @@ class DummyClient:
     def __init__(self):
         self.tickers = {}
 
+    async def get_historical_klines(self, symbol, interval, limit):
+        return []
+
 def test_ema_calculation():
     client = DummyClient()
     swing = SwingTrading(client)

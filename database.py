@@ -79,6 +79,17 @@ async def init_db():
                 closed_at TEXT
             )
         """)
+        await conn.executescript("""
+            CREATE TABLE IF NOT EXISTS swing_calibrations (
+                symbol TEXT PRIMARY KEY,
+                optimal_strategy TEXT NOT NULL,
+                parameters TEXT NOT NULL,
+                backtest_pnl REAL,
+                backtest_win_rate REAL,
+                backtest_trades INTEGER,
+                calibrated_at TEXT NOT NULL
+            )
+        """)
         await conn.commit()
 
 async def save_opportunity(op_type: str, symbol: str, details: dict, profit_pct: float, profit_usdt: float, confidence: float) -> int:
@@ -187,3 +198,19 @@ async def get_swing_stats() -> Dict:
             "net_profit": round(net_profit, 2),
             "total_closed": total_closed
         }
+
+async def save_swing_calibration(symbol: str, strategy: str, parameters: dict, pnl: float, win_rate: float, trades: int):
+    async with get_conn() as conn:
+        await conn.execute(
+            """INSERT OR REPLACE INTO swing_calibrations 
+               (symbol, optimal_strategy, parameters, backtest_pnl, backtest_win_rate, backtest_trades, calibrated_at) 
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (symbol, strategy, json.dumps(parameters), pnl, win_rate, trades, datetime.now(timezone.utc).isoformat())
+        )
+        await conn.commit()
+
+async def get_swing_calibrations() -> List[Dict]:
+    async with get_conn() as conn:
+        async with conn.execute("SELECT * FROM swing_calibrations") as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]

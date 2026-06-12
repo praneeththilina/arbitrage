@@ -14,6 +14,7 @@ from exchange.client import BinanceClient
 from strategies.funding_arb import FundingArbitrage
 from strategies.basis_arb import BasisArbitrage
 from strategies.swing_trading import SwingTrading
+from strategies.swing_calibration import SwingCalibrator
 from strategies.triangular_arb import TriangularArbitrage
 from trading.engine import PaperEngine
 from trading.live_engine import LiveEngine
@@ -25,6 +26,8 @@ client: BinanceClient = None
 funding_strategy: FundingArbitrage = None
 basis_strategy: BasisArbitrage = None
 swing_strategy: SwingTrading = None
+swing_calibrator: SwingCalibrator = None
+_swing_calib_task: asyncio.Task = None
 triangular_strategy: TriangularArbitrage = None
 engine = None
 start_time: float = 0
@@ -132,10 +135,11 @@ async def ticker_broadcaster():
                 status_data["strategies"] = _strategy_status()
                 
                 # Query swing positions history and current swings
-                from database import get_open_swing_positions, get_closed_swing_positions, get_swing_stats
+                from database import get_open_swing_positions, get_closed_swing_positions, get_swing_stats, get_swing_calibrations
                 status_data["open_swings"] = await get_open_swing_positions()
                 status_data["closed_swings"] = await get_closed_swing_positions(10)
                 status_data["swing_stats"] = await get_swing_stats()
+                status_data["swing_calibrations"] = await get_swing_calibrations()
                 
                 await manager.broadcast({
                     "type": "account",
@@ -150,7 +154,7 @@ async def ticker_broadcaster():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client, funding_strategy, basis_strategy, swing_strategy, triangular_strategy, engine, start_time, _swing_monitor_task
+    global client, funding_strategy, basis_strategy, swing_strategy, swing_calibrator, triangular_strategy, engine, start_time, _swing_monitor_task, _swing_calib_task
     await init_db()
     
     start_time = time.time()
@@ -180,6 +184,7 @@ async def lifespan(app: FastAPI):
     funding_strategy = FundingArbitrage(client)
     basis_strategy = BasisArbitrage(client)
     swing_strategy = SwingTrading(client)
+    swing_calibrator = SwingCalibrator(client, swing_trading_strategy=swing_strategy)
 
     triangular_strategy = TriangularArbitrage(client)
     triangular_strategy.resolve_dynamic_paths(symbols, spot_exchange)
@@ -378,8 +383,14 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(client.start(symbols, list(cross_symbols)))
     asyncio.create_task(ticker_broadcaster())
+    _swing_calib_task = asyncio.create_task(swing_calibrator.start())
 
     yield
+
+    if _swing_calib_task:
+        _swing_calib_task.cancel()
+    if swing_calibrator:
+        swing_calibrator.stop()
 
     if _swing_monitor_task:
         _swing_monitor_task.cancel()
@@ -598,6 +609,39 @@ async def close_swing_trade(pos_id: str):
         return {"status": "success", "position_id": pos_id}
     except Exception as e:
         logger.error(f"Error in swing close endpoint: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/swing/calibrate/{symbol}")
+async def force_calibrate_symbol(symbol: str):
+    try:
+        global swing_calibrator, client, swing_strategy
+        if not swing_calibrator:
+            return {"status": "error", "message": "calibrator not initialized"}
+            
+        klines = await client.get_historical_klines(symbol, interval="1h", limit=300)
+        if not klines or len(klines) < 50:
+            return {"status": "error", "message": "insufficient candle data"}
+
+        best_strat, best_params, pnl, win_rate, trades = swing_calibrator.calibrate(symbol, klines)
+        
+        from database import save_swing_calibration
+        await save_swing_calibration(symbol, best_strat, best_params, pnl, win_rate, trades)
+
+        if swing_strategy:
+            swing_strategy.update_calibrated_strategy(symbol, best_strat, best_params)
+            
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "optimal_strategy": best_strat,
+            "parameters": best_params,
+            "backtest_pnl": round(pnl, 2),
+            "backtest_win_rate": round(win_rate, 2),
+            "backtest_trades": trades
+        }
+    except Exception as e:
+        logger.error(f"Error in manual swing calibration endpoint for {symbol}: {e}")
         return {"status": "error", "message": str(e)}
 
 

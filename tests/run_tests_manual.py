@@ -8,13 +8,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 # Import test files
 import test_strategy_lifecycle
 import test_swing_trading
+import test_calibration
 
 def run_tests():
     print("=" * 60)
     print("Running Custom Test Suite...")
     print("=" * 60)
     
-    test_modules = [test_strategy_lifecycle, test_swing_trading]
+    test_modules = [test_strategy_lifecycle, test_swing_trading, test_calibration]
     passed = 0
     failed = 0
     

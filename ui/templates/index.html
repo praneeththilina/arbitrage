@@ -1451,8 +1451,10 @@ input:checked + .switch-slider:before {
             <tr>
               <th>Symbol</th>
               <th>Price</th>
-              <th>RSI (14)</th>
-              <th>EMA Trend</th>
+              <th>Optimal Strategy</th>
+              <th>Params</th>
+              <th>Backtest Win Rate</th>
+              <th>Backtest PnL</th>
               <th>Signal</th>
             </tr>
           </thead>
@@ -1461,8 +1463,9 @@ input:checked + .switch-slider:before {
           </tbody>
         </table>
       </div>
-      <div class="panel-footer">
+      <div class="panel-footer" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Click symbol to load TradingView chart</span>
+        <button onclick="calibrateSelectedSymbol()" style="background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; cursor: pointer; transition: all 0.2s ease;">CALIBRATE NOW</button>
       </div>
     </div>
 
@@ -1632,7 +1635,8 @@ const state = {
 
 const swingSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'SUIUSDT'];
 const swingState = {
-  signals: {}
+  signals: {},
+  calibrations: {}
 };
 swingSymbols.forEach(sym => {
   swingState.signals[sym] = {
@@ -2035,6 +2039,26 @@ function updateAccount(data) {
   if (data.closed_swings !== undefined) {
     renderClosedSwings(data.closed_swings);
   }
+  
+  if (data.swing_calibrations !== undefined) {
+    data.swing_calibrations.forEach(c => {
+      let params = {};
+      try {
+        params = typeof c.parameters === 'string' ? JSON.parse(c.parameters) : c.parameters;
+      } catch(e) {
+        params = c.parameters;
+      }
+      swingState.calibrations[c.symbol] = {
+        strategy: c.optimal_strategy,
+        parameters: params,
+        win_rate: c.backtest_win_rate,
+        pnl: c.backtest_pnl
+      };
+    });
+    if (currentTab === 'swing') {
+      renderSwingWatchlist();
+    }
+  }
 }
 
 async function closePosition(id) {
@@ -2377,7 +2401,7 @@ function renderSwingWatchlist() {
   
   let html = '';
   swingSymbols.forEach(sym => {
-    const data = swingState.signals[sym];
+    const data = swingState.signals[sym] || {};
     let price = data.price;
     if (!price && state.tickers[sym]) {
       price = state.tickers[sym].spot;
@@ -2387,19 +2411,36 @@ function renderSwingWatchlist() {
     if (data.signal === 'BUY') signalClass = 'green';
     else if (data.signal === 'SELL') signalClass = 'red';
     
-    let trend = 'Neutral';
-    if (data.ema_9 && data.ema_21) {
-      trend = data.ema_9 > data.ema_21 ? 'Bullish (EMA9 > EMA21)' : 'Bearish (EMA9 < EMA21)';
+    const calib = swingState.calibrations[sym] || {};
+    const strategyName = calib.strategy || data.optimal_strategy || 'Auto-Calibrating...';
+    let paramsStr = '-';
+    if (calib.parameters || data.parameters) {
+      const p = calib.parameters || data.parameters;
+      if (strategyName === 'EMA_RSI') {
+        paramsStr = `EMA(${p.ema_fast}/${p.ema_slow}), RSI(${p.rsi_period})`;
+      } else if (strategyName === 'MACD') {
+        paramsStr = `MACD(${p.macd_fast},${p.macd_slow},${p.macd_signal})`;
+      } else if (strategyName === 'Bollinger Bands') {
+        paramsStr = `BB(${p.bb_period}, ${p.bb_std_dev})`;
+      }
     }
-    const trendCls = trend.startsWith('Bullish') ? 'green' : trend.startsWith('Bearish') ? 'red' : '';
+    
+    const winRate = calib.win_rate !== undefined ? `${calib.win_rate.toFixed(1)}%` : '-';
+    const wrClass = calib.win_rate >= 60 ? 'green' : calib.win_rate >= 45 ? 'blue' : calib.win_rate ? 'red' : '';
+    
+    const pnl = calib.pnl !== undefined ? `${calib.pnl >= 0 ? '+' : ''}${calib.pnl.toFixed(1)}%` : '-';
+    const pnlClass = calib.pnl >= 0 ? 'green' : calib.pnl ? 'red' : '';
+    
     const activeCls = (sym === currentSwingSymbol) ? 'selected' : '';
 
     html += `<tr id="swing-row-${sym}" class="${activeCls}" onclick="initTradingViewWidget('${sym}')">
       <td><strong>${sym}</strong></td>
       <td class="price blue">${price ? fmt(price) : '-'}</td>
-      <td>${data.rsi ? data.rsi.toFixed(2) : '-'}</td>
-      <td class="${trendCls}">${trend}</td>
-      <td><span class="badge ${signalClass}">${data.signal}</span></td>
+      <td>${strategyName}</td>
+      <td style="font-size:11px;color:var(--text-secondary)">${paramsStr}</td>
+      <td class="${wrClass}"><strong>${winRate}</strong></td>
+      <td class="${pnlClass}"><strong>${pnl}</strong></td>
+      <td><span class="badge ${signalClass}">${data.signal || 'HOLD'}</span></td>
     </tr>`;
   });
   
@@ -2613,6 +2654,45 @@ function renderClosedSwings(closed) {
   });
   
   tbody.innerHTML = html;
+}
+
+async function calibrateSelectedSymbol() {
+  const symbol = currentSwingSymbol;
+  if (!symbol) return;
+  
+  const originalBtnText = "CALIBRATE NOW";
+  const buttons = document.querySelectorAll('button[onclick="calibrateSelectedSymbol()"]');
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    btn.textContent = "CALIBRATING...";
+  });
+  
+  try {
+    const resp = await fetch(`/api/swing/calibrate/${symbol}`, { method: 'POST' });
+    const res = await resp.json();
+    if (res.status === 'success') {
+      alert(`Calibration complete for ${symbol}!\nOptimal Strategy: ${res.optimal_strategy}\nBacktest Win Rate: ${res.backtest_win_rate}%\nBacktest Return: +${res.backtest_pnl}%`);
+      
+      // Update local state directly to reflect immediately
+      swingState.calibrations[symbol] = {
+        strategy: res.optimal_strategy,
+        parameters: res.parameters,
+        win_rate: res.backtest_win_rate,
+        pnl: res.backtest_pnl
+      };
+      renderSwingWatchlist();
+    } else {
+      alert(`Calibration failed: ${res.message}`);
+    }
+  } catch(e) {
+    console.error(e);
+    alert(`Error running calibration: ${e.message}`);
+  } finally {
+    buttons.forEach(btn => {
+      btn.disabled = false;
+      btn.textContent = originalBtnText;
+    });
+  }
 }
 </script>
 </body>
