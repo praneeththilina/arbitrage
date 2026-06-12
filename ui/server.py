@@ -24,6 +24,8 @@ funding_strategy: FundingArbitrage = None
 triangular_strategy: TriangularArbitrage = None
 paper: PaperEngine = None
 start_time: float = 0
+_funding_task: asyncio.Task = None
+_triangular_task: asyncio.Task = None
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -146,8 +148,6 @@ async def lifespan(app: FastAPI):
     paper.on_trade(on_trade)
 
     asyncio.create_task(client.start(symbols))
-    asyncio.create_task(funding_strategy.start())
-    asyncio.create_task(triangular_strategy.start())
     asyncio.create_task(ticker_broadcaster())
 
     yield
@@ -246,11 +246,16 @@ async def update_config(req: Request):
 
 @app.post("/api/start/{strategy}")
 async def start_strategy(strategy: str):
+    global _funding_task, _triangular_task
     if strategy == "funding" and funding_strategy:
-        asyncio.create_task(funding_strategy.start())
+        if _funding_task and not _funding_task.done():
+            return {"status": "already_running", "strategy": strategy}
+        _funding_task = asyncio.create_task(funding_strategy.start())
         return {"status": "started", "strategy": strategy}
     elif strategy == "triangular" and triangular_strategy:
-        asyncio.create_task(triangular_strategy.start())
+        if _triangular_task and not _triangular_task.done():
+            return {"status": "already_running", "strategy": strategy}
+        _triangular_task = asyncio.create_task(triangular_strategy.start())
         return {"status": "started", "strategy": strategy}
     return {"status": "error", "message": "unknown strategy"}
 

@@ -58,13 +58,14 @@ class FundingArbitrage:
 
         if fr > 0:
             action = "short_perp_long_spot"
-            expected_apr = fr * 24 * 365 * 100
         else:
             action = "long_perp_short_spot"
-            expected_apr = abs(fr) * 24 * 365 * 100
+
+        funding_per_day = abs(fr) * 3
+        expected_apr = funding_per_day * 365 * 100
 
         funding_pos = "longs_pay" if fr > 0 else "shorts_pay"
-        confidence = min(abs_fr * 100, 0.95)
+        confidence = min(abs_fr * 500, 0.95)
 
         details = {
             "funding_rate": fr,

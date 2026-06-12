@@ -8,8 +8,8 @@ class Settings(BaseSettings):
 
     min_volume_24h_usdt: float = 10_000_000
     max_symbols: int = 30
-    min_spread_pct: float = 0.01
-    min_funding_rate_abs: float = 0.001
+    min_spread_pct: float = 0.001
+    min_funding_rate_abs: float = 0.00001
 
     taker_fee: float = 0.001
     maker_fee: float = 0.001

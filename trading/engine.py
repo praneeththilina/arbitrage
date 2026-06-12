@@ -226,6 +226,10 @@ class PaperEngine:
             "action": op.action,
             "funding_rate": op.funding_rate,
             "basis_pct": round(op.basis_pct, 4),
+            "spot_price": op.spot_price,
+            "futures_price": op.futures_price,
+            "expected_apr": round(op.expected_apr, 2),
+            "trade_time": time.strftime("%H:%M:%S"),
         }
 
         if self._on_trade:
@@ -268,6 +272,8 @@ class PaperEngine:
             "net_profit_expected": round(validation["net_profit"], 2),
             "balance_remaining": round(self.balance_usdt, 2),
             "profit_pct": round(op.profit_pct, 4),
+            "legs": op.legs,
+            "trade_time": time.strftime("%H:%M:%S"),
         }
 
         if self._on_trade:

@@ -98,11 +98,11 @@ tr:hover td{background:#1e293b}
     </div>
   </div>
 
-  <div class="panel" style="grid-column:1/-1;max-height:250px">
-    <h2>Trades</h2>
+  <div class="panel" style="grid-column:1/-1;max-height:300px">
+    <h2>Trade Log</h2>
     <div class="panel-body">
       <table>
-        <thead><tr><th>Time</th><th>Type</th><th>Symbol/Path</th><th>Notional</th><th>Fee</th><th>Net Profit</th><th>Balance</th></tr></thead>
+        <thead><tr><th>Time</th><th>Type</th><th>Symbol/Path</th><th>Side</th><th>Qty</th><th>Price</th><th>Notional</th><th>Fee</th><th>Net Profit</th><th>Details</th><th>Balance</th></tr></thead>
         <tbody id="tradeTable"></tbody>
       </table>
     </div>
@@ -301,22 +301,48 @@ function addTrade(data) {
   document.getElementById('tradeCount').textContent = tradeCount + ' trades executed';
 
   const tbody = document.getElementById('tradeTable');
-  const now = new Date().toLocaleTimeString();
+  const now = data.trade_time || new Date().toLocaleTimeString();
   const type = data.type === 'funding' ? 'Funding Arb' : 'Triangular';
   const symbol = data.symbol || data.path || '-';
   const pnl = data.net_profit_expected !== undefined ? data.net_profit_expected : 0;
   const pnlCls = pnl >= 0 ? 'green' : 'red';
 
-  const row = `<tr>
-    <td style="color:#64748b">${now}</td>
-    <td><span class="badge" style="background:#60a5fa33;color:#60a5fa">${type}</span></td>
-    <td>${symbol}</td>
-    <td>${fmt(data.notional)}</td>
-    <td style="color:#ef4444">${fmt(data.fee)}</td>
-    <td class="${pnlCls}">${fmt(pnl)}</td>
-    <td class="blue">${fmt(data.balance_remaining)}</td>
-  </tr>`;
-  tbody.insertAdjacentHTML('afterbegin', row);
+  if (data.type === 'funding') {
+    const sideLabel = data.action && data.action.includes('short') ? 'SHORT' : 'LONG';
+    const qty = data.notional && data.spot_price ? (data.notional / data.spot_price).toFixed(4) : '-';
+    const det = 'FR:' + (data.funding_rate*100).toFixed(4) + '% Basis:' + data.basis_pct + '% APR:' + data.expected_apr + '%';
+    const row = `<tr>
+      <td style="color:#64748b">${now}</td>
+      <td><span class="badge" style="background:#f59e0b33;color:#f59e0b">${type}</span></td>
+      <td><strong>${symbol}</strong></td>
+      <td><span class="badge ${sideLabel === 'LONG' ? 'buy' : 'sell'}">${sideLabel}</span></td>
+      <td>${qty}</td>
+      <td>$${fmt(data.spot_price)}/${fmt(data.futures_price)}</td>
+      <td>$${fmt(data.notional)}</td>
+      <td style="color:#ef4444">$${fmt(data.fee)}</td>
+      <td class="${pnlCls}">$${fmt(pnl)}</td>
+      <td style="color:#94a3b8;font-size:11px">${det}</td>
+      <td class="blue">$${fmt(data.balance_remaining)}</td>
+    </tr>`;
+    tbody.insertAdjacentHTML('afterbegin', row);
+  } else {
+    const qty = data.notional ? (data.notional / (data.legs && data.legs[0] && data.legs[0].price || 1)).toFixed(4) : '-';
+    const price = data.legs ? data.legs.map(l => '$' + fmt(l.price)).join(' → ') : '-';
+    const legsStr = data.legs ? data.legs.map(l => l.side + ' ' + l.symbol + ' @ $' + fmt(l.price)).join(' | ') : '-';
+    const row = `<tr>
+      <td style="color:#64748b">${now}</td>
+      <td><span class="badge" style="background:#a78bfa33;color:#a78bfa">${type}</span></td>
+      <td><strong>${symbol}</strong></td>
+      <td colspan="2" style="font-size:11px;color:#94a3b8">${legsStr}</td>
+      <td>${price} →</td>
+      <td>$${fmt(data.notional)}</td>
+      <td style="color:#ef4444">$${fmt(data.fee)}</td>
+      <td class="${pnlCls}">$${fmt(pnl)} (${data.profit_pct || 0}%)</td>
+      <td style="color:#94a3b8;font-size:11px">Profit: ${data.profit_pct || 0}%</td>
+      <td class="blue">$${fmt(data.balance_remaining)}</td>
+    </tr>`;
+    tbody.insertAdjacentHTML('afterbegin', row);
+  }
   while (tbody.children.length > 100) {
     tbody.removeChild(tbody.lastChild);
   }
