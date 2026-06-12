@@ -13,6 +13,7 @@ from config import settings
 from exchange.client import BinanceClient
 from strategies.funding_arb import FundingArbitrage
 from strategies.basis_arb import BasisArbitrage
+from strategies.swing_trading import SwingTrading
 from strategies.triangular_arb import TriangularArbitrage
 from trading.engine import PaperEngine
 from trading.live_engine import LiveEngine
@@ -23,12 +24,15 @@ logger = logging.getLogger(__name__)
 client: BinanceClient = None
 funding_strategy: FundingArbitrage = None
 basis_strategy: BasisArbitrage = None
+swing_strategy: SwingTrading = None
 triangular_strategy: TriangularArbitrage = None
 engine = None
 start_time: float = 0
 _funding_task: asyncio.Task = None
 _basis_task: asyncio.Task = None
+_swing_task: asyncio.Task = None
 _triangular_task: asyncio.Task = None
+_swing_monitor_task: asyncio.Task = None
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -63,6 +67,7 @@ def _task_active(task: Optional[asyncio.Task]) -> bool:
 def _strategy_status() -> Dict[str, Any]:
     funding_running = bool(funding_strategy and funding_strategy.is_running)
     basis_running = bool(basis_strategy and basis_strategy.is_running)
+    swing_running = bool(swing_strategy and swing_strategy.is_running)
     triangular_running = bool(triangular_strategy and triangular_strategy.is_running)
     return {
         "funding": {
@@ -74,6 +79,11 @@ def _strategy_status() -> Dict[str, Any]:
             "available": basis_strategy is not None,
             "running": basis_running,
             "task_active": _task_active(_basis_task),
+        },
+        "swing": {
+            "available": swing_strategy is not None,
+            "running": swing_running,
+            "task_active": _task_active(_swing_task),
         },
         "triangular": {
             "available": triangular_strategy is not None,
@@ -121,6 +131,12 @@ async def ticker_broadcaster():
                 status_data["triangular_paths"] = len(triangular_strategy.paths) if triangular_strategy else 0
                 status_data["strategies"] = _strategy_status()
                 
+                # Query swing positions history and current swings
+                from database import get_open_swing_positions, get_closed_swing_positions, get_swing_stats
+                status_data["open_swings"] = await get_open_swing_positions()
+                status_data["closed_swings"] = await get_closed_swing_positions(10)
+                status_data["swing_stats"] = await get_swing_stats()
+                
                 await manager.broadcast({
                     "type": "account",
                     "data": status_data
@@ -134,7 +150,7 @@ async def ticker_broadcaster():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client, funding_strategy, basis_strategy, triangular_strategy, engine, start_time
+    global client, funding_strategy, basis_strategy, swing_strategy, triangular_strategy, engine, start_time, _swing_monitor_task
     await init_db()
     
     start_time = time.time()
@@ -163,11 +179,80 @@ async def lifespan(app: FastAPI):
 
     funding_strategy = FundingArbitrage(client)
     basis_strategy = BasisArbitrage(client)
+    swing_strategy = SwingTrading(client)
 
     triangular_strategy = TriangularArbitrage(client)
     triangular_strategy.resolve_dynamic_paths(symbols, spot_exchange)
 
     cross_symbols = {p.cross_symbol for p in triangular_strategy.paths}
+    
+    # Background monitor loop for checking Stop Loss / Take Profit on Swing positions
+    async def swing_monitor_loop():
+        while True:
+            try:
+                from database import get_open_swing_positions, update_swing_position_price, close_swing_position, update_balance
+                open_swings = await get_open_swing_positions()
+                for s in open_swings:
+                    symbol = s["symbol"]
+                    if symbol in client.tickers:
+                        t = client.tickers[symbol]
+                        if t.spot_price > 0:
+                            current_price = t.spot_price
+                            entry_price = s["entry_price"]
+                            qty = s["quantity"]
+                            lev = s["leverage"]
+                            side = s["side"]
+                            sl = s["stop_loss"]
+                            tp = s["take_profit"]
+                            pos_id = s["id"]
+                            
+                            if side == "buy":
+                                unrealized_pnl = qty * (current_price - entry_price)
+                            else:
+                                unrealized_pnl = qty * (entry_price - current_price)
+                                
+                            await update_swing_position_price(pos_id, current_price, unrealized_pnl)
+                            
+                            # Check risk limits (SL/TP)
+                            trigger_close = False
+                            if side == "buy":
+                                if sl and current_price <= sl:
+                                    trigger_close = True
+                                if tp and current_price >= tp:
+                                    trigger_close = True
+                            else:
+                                if sl and current_price >= sl:
+                                    trigger_close = True
+                                if tp and current_price <= tp:
+                                    trigger_close = True
+                                    
+                            if trigger_close:
+                                total_pnl = unrealized_pnl
+                                margin = (qty * entry_price) / lev
+                                engine.balance_usdt += margin + total_pnl
+                                engine.locked_usdt -= margin
+                                await update_balance("USDT", engine.balance_usdt, engine.locked_usdt, engine.balance_usdt + engine.locked_usdt)
+                                await close_swing_position(pos_id, total_pnl, current_price)
+                                
+                                await manager.broadcast({
+                                    "type": "trade",
+                                    "data": {
+                                        "event": "swing_closed",
+                                        "symbol": symbol,
+                                        "side": side,
+                                        "notional": qty * entry_price,
+                                        "entry_price": entry_price,
+                                        "exit_price": current_price,
+                                        "total_pnl": total_pnl,
+                                        "balance_remaining": engine.balance_usdt,
+                                        "reason": "SL/TP hit"
+                                    }
+                                })
+            except Exception as e:
+                logger.error(f"Error in swing monitor loop: {e}")
+            await asyncio.sleep(1.0)
+
+    _swing_monitor_task = asyncio.create_task(swing_monitor_loop())
 
     async def on_funding_op(op):
         try:
@@ -279,8 +364,15 @@ async def lifespan(app: FastAPI):
     async def on_trade(result):
         await manager.broadcast({"type": "trade", "data": result})
 
+    async def on_swing_signal(signal_data):
+        await manager.broadcast({
+            "type": "swing_signal",
+            "data": signal_data
+        })
+
     funding_strategy.on_opportunity(on_funding_op)
     basis_strategy.on_opportunity(on_basis_op)
+    swing_strategy.on_opportunity(on_swing_signal)
     triangular_strategy.on_opportunity(on_triangular_op)
     engine.on_trade(on_trade)
 
@@ -289,10 +381,15 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    if _swing_monitor_task:
+        _swing_monitor_task.cancel()
+
     if funding_strategy:
         funding_strategy.stop()
     if basis_strategy:
         basis_strategy.stop()
+    if swing_strategy:
+        swing_strategy.stop()
     if triangular_strategy:
         triangular_strategy.stop()
     if engine:
@@ -323,7 +420,7 @@ async def get_status():
 
 @app.post("/api/start/{strategy}")
 async def start_strategy(strategy: str):
-    global _funding_task, _basis_task, _triangular_task
+    global _funding_task, _basis_task, _swing_task, _triangular_task
     if strategy == "funding" and funding_strategy:
         if funding_strategy.is_running or _task_active(_funding_task):
             return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
@@ -333,6 +430,11 @@ async def start_strategy(strategy: str):
         if basis_strategy.is_running or _task_active(_basis_task):
             return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
         _basis_task = asyncio.create_task(basis_strategy.start())
+        return {"status": "started", "strategy": strategy, "strategies": _strategy_status()}
+    elif strategy == "swing" and swing_strategy:
+        if swing_strategy.is_running or _task_active(_swing_task):
+            return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
+        _swing_task = asyncio.create_task(swing_strategy.start())
         return {"status": "started", "strategy": strategy, "strategies": _strategy_status()}
     elif strategy == "triangular" and triangular_strategy:
         if triangular_strategy.is_running or _task_active(_triangular_task):
@@ -344,7 +446,7 @@ async def start_strategy(strategy: str):
 
 @app.post("/api/stop/{strategy}")
 async def stop_strategy(strategy: str):
-    global _funding_task, _basis_task, _triangular_task
+    global _funding_task, _basis_task, _swing_task, _triangular_task
     if strategy == "funding" and funding_strategy:
         funding_strategy.stop()
         _cancel_task(_funding_task)
@@ -354,6 +456,11 @@ async def stop_strategy(strategy: str):
         basis_strategy.stop()
         _cancel_task(_basis_task)
         _basis_task = None
+        return {"status": "stopped", "strategy": strategy, "strategies": _strategy_status()}
+    elif strategy == "swing" and swing_strategy:
+        swing_strategy.stop()
+        _cancel_task(_swing_task)
+        _swing_task = None
         return {"status": "stopped", "strategy": strategy, "strategies": _strategy_status()}
     elif strategy == "triangular" and triangular_strategy:
         triangular_strategy.stop()
@@ -371,6 +478,127 @@ async def close_position(position_id: str):
             return {"status": "closed", "position_id": position_id, "result": result}
         return {"status": "error", "message": "position not found or already closed"}
     return {"status": "error", "message": "engine not initialized"}
+
+
+@app.post("/api/swing/open")
+async def open_swing_trade(req: Request):
+    try:
+        data = await req.json()
+        symbol = data.get("symbol")
+        side = data.get("side", "buy").lower()
+        size_usdt = float(data.get("size_usdt", 100.0))
+        leverage = int(data.get("leverage", 1))
+        stop_loss = data.get("stop_loss")
+        take_profit = data.get("take_profit")
+
+        if stop_loss is not None:
+            stop_loss = float(stop_loss)
+        if take_profit is not None:
+            take_profit = float(take_profit)
+
+        if not engine:
+            return {"status": "error", "message": "trading engine not initialized"}
+
+        if symbol not in client.tickers:
+            return {"status": "error", "message": f"ticker {symbol} not found"}
+
+        ticker = client.tickers[symbol]
+        if not ticker.spot_price or ticker.spot_price <= 0:
+            return {"status": "error", "message": f"invalid spot price for {symbol}"}
+
+        spot_price = ticker.spot_price
+        margin = size_usdt / leverage
+
+        if margin > engine.balance_usdt:
+            return {"status": "error", "message": "insufficient balance for margin"}
+
+        qty = size_usdt / spot_price
+
+        from database import save_swing_position, update_balance
+        engine.balance_usdt -= margin
+        engine.locked_usdt += margin
+        await update_balance("USDT", engine.balance_usdt, engine.locked_usdt, engine.balance_usdt + engine.locked_usdt)
+
+        pos_id = f"swing_{int(time.time())}"
+        await save_swing_position(pos_id, symbol, side, spot_price, qty, leverage, stop_loss, take_profit)
+
+        await manager.broadcast({
+            "type": "trade",
+            "data": {
+                "event": "swing_opened",
+                "symbol": symbol,
+                "side": side,
+                "notional": size_usdt,
+                "price": spot_price,
+                "qty": qty,
+                "leverage": leverage,
+                "balance_remaining": engine.balance_usdt
+            }
+        })
+
+        return {"status": "success", "position_id": pos_id}
+    except Exception as e:
+        logger.error(f"Error in swing open endpoint: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/swing/close/{pos_id}")
+async def close_swing_trade(pos_id: str):
+    try:
+        if not engine:
+            return {"status": "error", "message": "trading engine not initialized"}
+
+        from database import get_open_swing_positions, close_swing_position, update_balance
+        open_swings = await get_open_swing_positions()
+        pos = next((s for s in open_swings if s["id"] == pos_id), None)
+        if not pos:
+            return {"status": "error", "message": "position not found or already closed"}
+
+        symbol = pos["symbol"]
+        if symbol not in client.tickers:
+            return {"status": "error", "message": f"ticker {symbol} not found"}
+
+        ticker = client.tickers[symbol]
+        current_price = ticker.spot_price
+        if not current_price or current_price <= 0:
+            return {"status": "error", "message": "invalid spot price to exit"}
+
+        qty = pos["quantity"]
+        entry_price = pos["entry_price"]
+        side = pos["side"]
+        lev = pos["leverage"]
+
+        if side == "buy":
+            total_pnl = qty * (current_price - entry_price)
+        else:
+            total_pnl = qty * (entry_price - current_price)
+
+        margin = (qty * entry_price) / lev
+
+        engine.balance_usdt += margin + total_pnl
+        engine.locked_usdt -= margin
+        await update_balance("USDT", engine.balance_usdt, engine.locked_usdt, engine.balance_usdt + engine.locked_usdt)
+        await close_swing_position(pos_id, total_pnl, current_price)
+
+        await manager.broadcast({
+            "type": "trade",
+            "data": {
+                "event": "swing_closed",
+                "symbol": symbol,
+                "side": side,
+                "notional": qty * entry_price,
+                "entry_price": entry_price,
+                "exit_price": current_price,
+                "total_pnl": total_pnl,
+                "balance_remaining": engine.balance_usdt,
+                "reason": "manual exit"
+            }
+        })
+
+        return {"status": "success", "position_id": pos_id}
+    except Exception as e:
+        logger.error(f"Error in swing close endpoint: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.websocket("/ws")

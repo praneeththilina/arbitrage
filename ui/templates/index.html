@@ -963,7 +963,206 @@ input:checked + .switch-slider:before {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+/* Tab navigation styling */
+.tabs-navigation {
+  display: flex;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 4px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-btn.active {
+  color: #fff;
+  background: var(--blue-bg);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 12px var(--blue-glow);
+}
+
+/* Order Panel styling */
+.order-side-btn {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.order-side-btn.buy.active {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 0 10px var(--green-glow);
+}
+
+.order-side-btn.sell.active {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 10px var(--red-glow);
+}
+
+.order-submit-btn:hover {
+  background: #2563eb !important;
+  box-shadow: 0 0 12px var(--blue-glow);
+}
+
+/* Swing watchlist highlight */
+#swingWatchlistTable tr {
+  cursor: pointer;
+}
+#swingWatchlistTable tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+#swingWatchlistTable tr.selected {
+  background: var(--blue-bg);
+  border-left: 3px solid var(--blue);
+}
+
+/* Swing Positions Deck */
+.swing-positions-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.swing-pos-card {
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.swing-pos-card:hover {
+  border-color: var(--text-muted);
+}
+
+.swing-pos-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.swing-pos-card-header .sym {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.swing-pos-card-header .side-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.swing-pos-card-header .side-badge.buy {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.swing-pos-card-header .side-badge.sell {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+}
+
+.swing-pos-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 11px;
+}
+
+.swing-pos-card-grid .label {
+  color: var(--text-secondary);
+}
+
+.swing-pos-card-grid .val {
+  font-weight: 600;
+  text-align: right;
+}
+
+.swing-pos-card-pnl {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px;
+  margin-top: 4px;
+}
+
+.swing-pos-card-pnl .pnl-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.swing-pos-card-pnl .pnl-val {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.swing-close-btn {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  border-radius: 6px;
+  padding: 6px;
+  font-weight: 700;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.swing-close-btn:hover {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 0 10px var(--red-glow);
+}
 </style>
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body>
 <div class="app">
@@ -998,7 +1197,19 @@ input:checked + .switch-slider:before {
     </div>
   </div>
 
-  <div class="main-container">
+  <!-- Tabs Navigation -->
+  <div class="tabs-navigation">
+    <button class="tab-btn active" id="btn-arbitrage-tab" onclick="switchTab('arbitrage')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+      Arbitrage Desk
+    </button>
+    <button class="tab-btn" id="btn-swing-tab" onclick="switchTab('swing')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3v18h18"></path><path d="m18.7 8-5.1 5.2-2.8-2.7L7 14.3"></path></svg>
+      Swing Trading Desk
+    </button>
+  </div>
+
+  <div class="main-container" id="arbitrage-tab-content">
     <!-- Left Column: Watchlist -->
     <div class="panel tickers-panel">
       <div class="panel-header">
@@ -1135,6 +1346,11 @@ input:checked + .switch-slider:before {
                   <button class="btn btn-success" id="triangularStart" onclick="toggleStrategy('triangular','start')">Start</button>
                   <button class="btn btn-danger" id="triangularStop" onclick="toggleStrategy('triangular','stop')" style="display:none">Stop</button>
                 </div>
+                <div class="strat-btn-group">
+                  <span class="strat-title">Swing Strategy</span>
+                  <button class="btn btn-success" id="swingStart" onclick="toggleStrategy('swing','start')">Start</button>
+                  <button class="btn btn-danger" id="swingStop" onclick="toggleStrategy('swing','stop')" style="display:none">Stop</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1221,6 +1437,183 @@ input:checked + .switch-slider:before {
       </div>
     </div>
   </div>
+
+  <!-- Swing Trading Desk Workspace -->
+  <div class="main-container" id="swing-tab-content" style="display: none;">
+    <!-- Left Column: Swing Watchlist -->
+    <div class="panel tickers-panel">
+      <div class="panel-header">
+        <h3>Swing Watchlist</h3>
+      </div>
+      <div class="panel-body">
+        <table class="tickers-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Price</th>
+              <th>RSI (14)</th>
+              <th>EMA Trend</th>
+              <th>Signal</th>
+            </tr>
+          </thead>
+          <tbody id="swingWatchlistTable">
+            <!-- Populated via swingState.signals -->
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-footer">
+        <span>Click symbol to load TradingView chart</span>
+      </div>
+    </div>
+
+    <!-- Right Column: Swing Workspace Grid -->
+    <div class="workspace-panel">
+      <!-- Top: KPI Grid -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Swing Balance</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val blue" id="swingBalance">0.00</span>
+            <span class="kpi-currency">USDT</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Active Swings</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val" id="swingActiveCount" style="color: var(--amber)">0</span>
+            <span class="kpi-unit">Positions</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Win Rate</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val" id="swingWinRate" style="color: var(--green)">0.00%</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Net Profit</span>
+          <div class="kpi-value-container">
+            <span class="kpi-val" id="swingNetProfit">0.00</span>
+            <span class="kpi-currency">USDT</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mid: Interactive TV Chart & Order Panel -->
+      <div class="mid-layout">
+        <!-- Chart Panel -->
+        <div class="panel tv-chart-panel" style="min-height: 480px;">
+          <div class="panel-header">
+            <h3 id="chartTitle">Chart: BTCUSDT</h3>
+          </div>
+          <div class="panel-body" style="height: 430px; position: relative;">
+            <div id="tradingview_widget" style="width: 100%; height: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- Manual Order Panel -->
+        <div class="panel order-panel" style="min-height: 480px;">
+          <div class="panel-header">
+            <h3>Manual Order Panel</h3>
+          </div>
+          <div class="panel-body" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+            <!-- Side Toggle button group -->
+            <div style="display: flex; gap: 8px;">
+              <button class="order-side-btn buy active" id="orderSideBuy" onclick="setOrderSide('buy')">LONG</button>
+              <button class="order-side-btn sell" id="orderSideSell" onclick="setOrderSide('sell')">SHORT</button>
+            </div>
+
+            <!-- Target Asset display -->
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <label style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">TARGET SYMBOL</label>
+              <input type="text" id="orderSymbol" readonly style="background: var(--bg-color); border: 1px solid var(--border-color); color: #fff; padding: 10px; border-radius: 6px; font-weight: 700; font-size: 14px;">
+            </div>
+
+            <!-- Trade Size -->
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <label style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">TRADE SIZE (USDT)</label>
+              <input type="number" id="orderSize" value="100" min="10" step="10" oninput="updateRequiredMargin()" style="background: var(--bg-color); border: 1px solid var(--border-color); color: #fff; padding: 10px; border-radius: 6px; font-size: 13px; font-weight: 600;">
+            </div>
+
+            <!-- Leverage Slider -->
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">LEVERAGE</label>
+                <span id="orderLeverageVal" style="font-weight: 700; color: var(--blue);">5x</span>
+              </div>
+              <input type="range" id="orderLeverage" min="1" max="20" step="1" value="5" oninput="updateLeverageReadout(this.value)" style="width: 100%;">
+            </div>
+
+            <!-- Stop Loss / Take Profit -->
+            <div style="display: flex; gap: 8px;">
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">STOP LOSS PRICE</label>
+                <input type="number" id="orderStopLoss" placeholder="Optional" step="any" style="background: var(--bg-color); border: 1px solid var(--border-color); color: #fff; padding: 10px; border-radius: 6px; font-size: 13px;">
+              </div>
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">TAKE PROFIT PRICE</label>
+                <input type="number" id="orderTakeProfit" placeholder="Optional" step="any" style="background: var(--bg-color); border: 1px solid var(--border-color); color: #fff; padding: 10px; border-radius: 6px; font-size: 13px;">
+              </div>
+            </div>
+
+            <!-- Margin Info -->
+            <div style="background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between;">
+              <span>Margin Required:</span>
+              <strong id="marginRequiredText" style="color: #fff;">20.00 USDT</strong>
+            </div>
+
+            <!-- Submit Button -->
+            <button class="order-submit-btn" id="submitOrderBtn" onclick="submitSwingOrder()" style="background: var(--blue); color: #fff; border: none; padding: 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s ease;">SUBMIT SWING ORDER</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom: Active Swing Positions -->
+      <div class="panel positions-panel">
+        <div class="panel-header">
+          <h3>Active Swing Positions</h3>
+          <span class="position-count-badge" id="swingPositionsCount">0 positions</span>
+        </div>
+        <div class="panel-body" style="padding: 12px;">
+          <div id="swingOpenPositions" class="swing-positions-deck">
+            <div class="no-positions">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+              <span>No active swing positions</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Closed Swing Trades history -->
+      <div class="panel log-panel">
+        <div class="panel-header">
+          <h3>Closed Swing Trades History</h3>
+        </div>
+        <div class="panel-body scrollable-y" style="max-height: 250px;">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Opened At</th>
+                <th>Closed At</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Leverage</th>
+                <th>Entry Price</th>
+                <th>Exit Price</th>
+                <th>Quantity</th>
+                <th>Final P&L (USDT)</th>
+              </tr>
+            </thead>
+            <tbody id="swingHistoryTable">
+              <tr>
+                <td colspan="9" style="text-align:center;color:var(--text-muted)">No closed swing trades</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1236,6 +1629,24 @@ const state = {
   sortKey: 'Symbol',
   sortOrder: 'asc'
 };
+
+const swingSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'SUIUSDT'];
+const swingState = {
+  signals: {}
+};
+swingSymbols.forEach(sym => {
+  swingState.signals[sym] = {
+    symbol: sym,
+    price: null,
+    rsi: null,
+    ema_9: null,
+    ema_21: null,
+    signal: 'LOADING'
+  };
+});
+let currentTab = 'arbitrage';
+let currentSwingSymbol = 'BTCUSDT';
+let orderSide = 'buy';
 
 function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
@@ -1268,6 +1679,7 @@ function connect() {
       case 'account': updateAccount(msg.data); break;
       case 'opportunity': addOpportunity(msg); break;
       case 'trade': addTrade(msg.data); break;
+      case 'swing_signal': updateSwingSignal(msg.data); break;
       case 'config_ack':
         if (msg.auto_trade !== undefined) updateAutoTradeUI(msg.auto_trade);
         if (msg.trade_size_pct !== undefined) updateSizeUI(msg.trade_size_pct);
@@ -1434,6 +1846,9 @@ function updateTickers(data) {
       }
     }
   }
+  if (currentTab === 'swing') {
+    renderSwingWatchlist();
+  }
 }
 
 function renderTickers() {
@@ -1594,6 +2009,31 @@ function updateAccount(data) {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
         <span>No active positions</span>
       </div>`;
+  }
+
+  // Swing specific KPI metrics & positions list
+  if (data.balance_usdt !== undefined) {
+    const swingBalEl = document.getElementById('swingBalance');
+    if (swingBalEl) swingBalEl.textContent = fmt(data.balance_usdt);
+  }
+  if (data.open_swings !== undefined) {
+    const swingActiveCountEl = document.getElementById('swingActiveCount');
+    if (swingActiveCountEl) swingActiveCountEl.textContent = data.open_swings.length;
+    const swingPositionsCountEl = document.getElementById('swingPositionsCount');
+    if (swingPositionsCountEl) swingPositionsCountEl.textContent = `${data.open_swings.length} positions`;
+    renderOpenSwings(data.open_swings);
+  }
+  if (data.swing_stats !== undefined) {
+    const swingWinRateEl = document.getElementById('swingWinRate');
+    if (swingWinRateEl) swingWinRateEl.textContent = `${data.swing_stats.win_rate.toFixed(2)}%`;
+    const swingNetProfitEl = document.getElementById('swingNetProfit');
+    if (swingNetProfitEl) {
+      swingNetProfitEl.textContent = fmt(data.swing_stats.net_profit);
+      swingNetProfitEl.className = 'kpi-val ' + (data.swing_stats.net_profit >= 0 ? 'green' : 'red');
+    }
+  }
+  if (data.closed_swings !== undefined) {
+    renderClosedSwings(data.closed_swings);
   }
 }
 
@@ -1806,6 +2246,31 @@ function addTrade(data) {
       <td style="color:var(--text-secondary);font-size:11px">Profit: ${data.profit_pct}%</td>
       <td class="blue">$${fmt(data.balance_remaining)}</td>
     </tr>`;
+  } else if (data.event === 'swing_opened') {
+    const sideLabel = data.side.toUpperCase() === 'BUY' ? 'LONG' : 'SHORT';
+    row = `<tr style="border-left:3px solid var(--blue)">
+      <td style="color:var(--text-muted)">${now}</td>
+      <td><span class="badge" style="background:var(--blue-bg);color:var(--blue)">SWING OPEN</span></td>
+      <td><strong>${symbol}</strong></td>
+      <td><span class="badge ${sideLabel === 'LONG' ? 'badge-long' : 'badge-short'}">${sideLabel}</span></td>
+      <td>$${fmt(data.notional)}</td>
+      <td style="color:var(--text-muted)">-</td>
+      <td style="color:var(--text-secondary);font-size:11px">Price: $${fmt(data.price)} | Leverage: ${data.leverage}x</td>
+      <td class="blue">$${fmt(data.balance_remaining)}</td>
+    </tr>`;
+  } else if (data.event === 'swing_closed') {
+    const cls = data.total_pnl >= 0 ? 'green' : 'red';
+    const sideLabel = data.side.toUpperCase() === 'BUY' ? 'LONG' : 'SHORT';
+    row = `<tr style="border-left:3px solid var(--red)">
+      <td style="color:var(--text-muted)">${now}</td>
+      <td><span class="badge" style="background:var(--red-bg);color:var(--red)">SWING CLOSE</span></td>
+      <td><strong>${symbol}</strong></td>
+      <td><span class="badge ${sideLabel === 'LONG' ? 'badge-long' : 'badge-short'}">${sideLabel}</span></td>
+      <td>$${fmt(data.notional)}</td>
+      <td class="${cls}">${data.total_pnl >= 0 ? '+' : ''}$${fmt(data.total_pnl)}</td>
+      <td style="color:var(--text-secondary);font-size:11px">Entry: $${fmt(data.entry_price)} | Exit: $${fmt(data.exit_price)} | Reason: ${data.reason || 'manual'}</td>
+      <td class="blue">$${fmt(data.balance_remaining)}</td>
+    </tr>`;
   }
 
   if (row) {
@@ -1828,7 +2293,7 @@ function setStrategyButtons(strategy, running, available = true) {
 }
 
 function updateStrategyUI(strategies) {
-  for (const strategy of ['funding', 'basis', 'triangular']) {
+  for (const strategy of ['funding', 'basis', 'triangular', 'swing']) {
     const status = strategies[strategy];
     if (!status) continue;
     setStrategyButtons(strategy, Boolean(status.running || status.task_active), status.available !== false);
@@ -1842,6 +2307,7 @@ async function loadInitialStatus() {
     if (result.strategies) {
       updateStrategyUI(result.strategies);
     }
+    renderSwingWatchlist();
   } catch(e) {
     console.error(e);
   }
@@ -1872,6 +2338,281 @@ async function toggleStrategy(strategy, action) {
   } finally {
     if (activeBtn && !updatedFromServer) activeBtn.disabled = false;
   }
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  const arbBtn = document.getElementById('btn-arbitrage-tab');
+  const swingBtn = document.getElementById('btn-swing-tab');
+  const arbContent = document.getElementById('arbitrage-tab-content');
+  const swingContent = document.getElementById('swing-tab-content');
+  
+  if (tab === 'arbitrage') {
+    arbBtn.classList.add('active');
+    swingBtn.classList.remove('active');
+    arbContent.style.display = 'grid';
+    swingContent.style.display = 'none';
+  } else {
+    arbBtn.classList.remove('active');
+    swingBtn.classList.add('active');
+    arbContent.style.display = 'none';
+    swingContent.style.display = 'grid';
+    
+    // Initialize or reload TV widget for currently selected swing symbol
+    initTradingViewWidget(currentSwingSymbol);
+  }
+}
+
+function updateSwingSignal(data) {
+  const sym = data.symbol;
+  if (swingState.signals[sym]) {
+    swingState.signals[sym] = data;
+    renderSwingWatchlist();
+  }
+}
+
+function renderSwingWatchlist() {
+  const tbody = document.getElementById('swingWatchlistTable');
+  if (!tbody) return;
+  
+  let html = '';
+  swingSymbols.forEach(sym => {
+    const data = swingState.signals[sym];
+    let price = data.price;
+    if (!price && state.tickers[sym]) {
+      price = state.tickers[sym].spot;
+    }
+    
+    let signalClass = 'muted';
+    if (data.signal === 'BUY') signalClass = 'green';
+    else if (data.signal === 'SELL') signalClass = 'red';
+    
+    let trend = 'Neutral';
+    if (data.ema_9 && data.ema_21) {
+      trend = data.ema_9 > data.ema_21 ? 'Bullish (EMA9 > EMA21)' : 'Bearish (EMA9 < EMA21)';
+    }
+    const trendCls = trend.startsWith('Bullish') ? 'green' : trend.startsWith('Bearish') ? 'red' : '';
+    const activeCls = (sym === currentSwingSymbol) ? 'selected' : '';
+
+    html += `<tr id="swing-row-${sym}" class="${activeCls}" onclick="initTradingViewWidget('${sym}')">
+      <td><strong>${sym}</strong></td>
+      <td class="price blue">${price ? fmt(price) : '-'}</td>
+      <td>${data.rsi ? data.rsi.toFixed(2) : '-'}</td>
+      <td class="${trendCls}">${trend}</td>
+      <td><span class="badge ${signalClass}">${data.signal}</span></td>
+    </tr>`;
+  });
+  
+  tbody.innerHTML = html;
+}
+
+function initTradingViewWidget(symbol) {
+  currentSwingSymbol = symbol;
+  document.getElementById('chartTitle').textContent = `Chart: ${symbol}`;
+  document.getElementById('orderSymbol').value = symbol;
+  
+  // Highlight selected row in swing watchlist
+  const rows = document.querySelectorAll('#swingWatchlistTable tr');
+  rows.forEach(r => {
+    if (r.id === `swing-row-${symbol}`) {
+      r.classList.add('selected');
+    } else {
+      r.classList.remove('selected');
+    }
+  });
+
+  // Populate placeholder hints for SL / TP inputs
+  const ticker = state.tickers[symbol];
+  if (ticker && ticker.spot) {
+    document.getElementById('orderStopLoss').placeholder = `SL (current: ${ticker.spot})`;
+    document.getElementById('orderTakeProfit').placeholder = `TP (current: ${ticker.spot})`;
+  }
+  
+  if (typeof TradingView !== 'undefined') {
+    new TradingView.widget({
+      "width": "100%",
+      "height": "100%",
+      "symbol": `BINANCE:${symbol}`,
+      "interval": "60",
+      "timezone": "Etc/UTC",
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "toolbar_bg": "#0c1020",
+      "enable_publishing": false,
+      "hide_side_toolbar": false,
+      "allow_symbol_change": true,
+      "container_id": "tradingview_widget"
+    });
+  }
+}
+
+function setOrderSide(side) {
+  orderSide = side;
+  const buyBtn = document.getElementById('orderSideBuy');
+  const sellBtn = document.getElementById('orderSideSell');
+  if (side === 'buy') {
+    buyBtn.classList.add('active');
+    sellBtn.classList.remove('active');
+  } else {
+    buyBtn.classList.remove('active');
+    sellBtn.classList.add('active');
+  }
+}
+
+function updateLeverageReadout(val) {
+  document.getElementById('orderLeverageVal').textContent = `${val}x`;
+  updateRequiredMargin();
+}
+
+function updateRequiredMargin() {
+  const size = parseFloat(document.getElementById('orderSize').value) || 0;
+  const leverage = parseInt(document.getElementById('orderLeverage').value) || 1;
+  const margin = size / leverage;
+  document.getElementById('marginRequiredText').textContent = `${margin.toFixed(2)} USDT`;
+}
+
+async function submitSwingOrder() {
+  const btn = document.getElementById('submitOrderBtn');
+  btn.disabled = true;
+  
+  const symbol = currentSwingSymbol;
+  const side = orderSide;
+  const size_usdt = parseFloat(document.getElementById('orderSize').value);
+  const leverage = parseInt(document.getElementById('orderLeverage').value);
+  
+  const slVal = document.getElementById('orderStopLoss').value;
+  const tpVal = document.getElementById('orderTakeProfit').value;
+  const stop_loss = slVal ? parseFloat(slVal) : null;
+  const take_profit = tpVal ? parseFloat(tpVal) : null;
+  
+  try {
+    const resp = await fetch('/api/swing/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, side, size_usdt, leverage, stop_loss, take_profit })
+    });
+    const res = await resp.json();
+    if (res.status === 'success') {
+      document.getElementById('orderStopLoss').value = '';
+      document.getElementById('orderTakeProfit').value = '';
+      alert(`Swing order submitted successfully! Position ID: ${res.position_id}`);
+    } else {
+      alert(`Order failed: ${res.message}`);
+    }
+  } catch(e) {
+    console.error(e);
+    alert(`Error submitting swing order: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function closeSwingPosition(posId) {
+  if (!confirm('Are you sure you want to close this swing position?')) return;
+  try {
+    const resp = await fetch(`/api/swing/close/${posId}`, { method: 'POST' });
+    const res = await resp.json();
+    if (res.status !== 'success') {
+      alert(`Failed to close position: ${res.message}`);
+    }
+  } catch(e) {
+    console.error(e);
+    alert(`Error closing position: ${e.message}`);
+  }
+}
+
+function renderOpenSwings(swings) {
+  const container = document.getElementById('swingOpenPositions');
+  if (!container) return;
+  
+  if (swings.length === 0) {
+    container.innerHTML = `
+      <div class="no-positions">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+        <span>No active swing positions</span>
+      </div>`;
+    return;
+  }
+  
+  let html = '';
+  swings.forEach(p => {
+    const markPrice = p.current_price || p.entry_price;
+    const unrealizedPnL = p.unrealized_pnl || 0.0;
+    const pnlCls = unrealizedPnL >= 0 ? 'green' : 'red';
+    const sideCls = p.side === 'buy' ? 'buy' : 'sell';
+    const sideText = p.side === 'buy' ? 'LONG' : 'SHORT';
+    const notional = p.quantity * p.entry_price;
+    const roi = (unrealizedPnL / (notional / p.leverage)) * 100;
+    
+    html += `
+      <div class="swing-pos-card" id="swing-pos-${p.id}">
+        <div class="swing-pos-card-header">
+          <span class="sym">${p.symbol}</span>
+          <span class="side-badge ${sideCls}">${sideText} ${p.leverage}x</span>
+        </div>
+        <div class="swing-pos-card-grid">
+          <span class="label">Entry Price:</span>
+          <span class="val">$${fmt(p.entry_price)}</span>
+          <span class="label">Mark Price:</span>
+          <span class="val">$${fmt(markPrice)}</span>
+          <span class="label">Quantity:</span>
+          <span class="val">${p.quantity.toFixed(4)}</span>
+          <span class="label">Notional Size:</span>
+          <span class="val">$${fmt(notional)}</span>
+          <span class="label">Margin:</span>
+          <span class="val">$${fmt(notional / p.leverage)}</span>
+          <span class="label">Stop Loss:</span>
+          <span class="val">${p.stop_loss ? '$'+fmt(p.stop_loss) : '-'}</span>
+          <span class="label">Take Profit:</span>
+          <span class="val">${p.take_profit ? '$'+fmt(p.take_profit) : '-'}</span>
+        </div>
+        <div class="swing-pos-card-pnl">
+          <span class="pnl-label">Unrealized P&L</span>
+          <div style="text-align: right; display: flex; flex-direction: column;">
+            <span class="pnl-val ${pnlCls}">$${fmt(unrealizedPnL)}</span>
+            <span style="font-size: 9px; font-weight: bold;" class="${pnlCls}">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}% ROI</span>
+          </div>
+        </div>
+        <button class="swing-close-btn" onclick="closeSwingPosition('${p.id}')">CLOSE POSITION</button>
+      </div>`;
+  });
+  
+  container.innerHTML = html;
+}
+
+function renderClosedSwings(closed) {
+  const tbody = document.getElementById('swingHistoryTable');
+  if (!tbody) return;
+  
+  if (closed.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">No closed swing trades</td></tr>`;
+    return;
+  }
+  
+  let html = '';
+  closed.forEach(c => {
+    const pnlCls = c.total_pnl >= 0 ? 'green' : 'red';
+    const sideCls = c.side === 'buy' ? 'buy' : 'sell';
+    const sideText = c.side === 'buy' ? 'LONG' : 'SHORT';
+    const size = c.quantity * c.entry_price;
+    const openedStr = c.opened_at ? new Date(c.opened_at).toLocaleTimeString() : '-';
+    const closedStr = c.closed_at ? new Date(c.closed_at).toLocaleTimeString() : '-';
+    
+    html += `<tr>
+      <td style="color:var(--text-muted);font-size:11px">${openedStr}</td>
+      <td style="color:var(--text-muted);font-size:11px">${closedStr}</td>
+      <td><strong>${c.symbol}</strong></td>
+      <td><span class="badge ${c.side === 'buy' ? 'badge-success' : 'badge-danger'}" style="background:${c.side==='buy'?'var(--green-bg)':'var(--red-bg)'};color:${c.side==='buy'?'var(--green)':'var(--red)'}">${sideText}</span></td>
+      <td>${c.leverage}x</td>
+      <td>$${fmt(c.entry_price)}</td>
+      <td>$${fmt(c.current_price)}</td>
+      <td>${c.quantity.toFixed(4)}</td>
+      <td class="${pnlCls}"><strong>$${fmt(c.total_pnl)}</strong></td>
+    </tr>`;
+  });
+  
+  tbody.innerHTML = html;
 }
 </script>
 </body>
