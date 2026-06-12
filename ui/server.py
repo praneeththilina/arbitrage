@@ -69,11 +69,6 @@ def _strategy_status() -> Dict[str, Any]:
             "running": funding_running,
             "task_active": _task_active(_funding_task),
         },
-        "basis": {
-            "available": basis_strategy is not None,
-            "running": bool(basis_strategy and basis_strategy.is_running),
-            "task_active": _task_active(_basis_task),
-        },
         "triangular": {
             "available": triangular_strategy is not None,
             "running": triangular_running,
@@ -328,11 +323,6 @@ async def start_strategy(strategy: str):
             return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
         _funding_task = asyncio.create_task(funding_strategy.start())
         return {"status": "started", "strategy": strategy, "strategies": _strategy_status()}
-    elif strategy == "basis" and basis_strategy:
-        if basis_strategy.is_running or _task_active(_basis_task):
-            return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
-        _basis_task = asyncio.create_task(basis_strategy.start())
-        return {"status": "started", "strategy": strategy, "strategies": _strategy_status()}
     elif strategy == "triangular" and triangular_strategy:
         if triangular_strategy.is_running or _task_active(_triangular_task):
             return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}
@@ -343,16 +333,11 @@ async def start_strategy(strategy: str):
 
 @app.post("/api/stop/{strategy}")
 async def stop_strategy(strategy: str):
-    global _funding_task, _basis_task, _triangular_task
+    global _funding_task, _triangular_task
     if strategy == "funding" and funding_strategy:
         funding_strategy.stop()
         _cancel_task(_funding_task)
         _funding_task = None
-        return {"status": "stopped", "strategy": strategy, "strategies": _strategy_status()}
-    elif strategy == "basis" and basis_strategy:
-        basis_strategy.stop()
-        _cancel_task(_basis_task)
-        _basis_task = None
         return {"status": "stopped", "strategy": strategy, "strategies": _strategy_status()}
     elif strategy == "triangular" and triangular_strategy:
         triangular_strategy.stop()

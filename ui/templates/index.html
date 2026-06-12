@@ -1818,7 +1818,7 @@ function setStrategyButtons(strategy, running, available = true) {
 }
 
 function updateStrategyUI(strategies) {
-  for (const strategy of ['funding', 'basis', 'triangular']) {
+  for (const strategy of ['funding', 'triangular']) {
     const status = strategies[strategy];
     if (!status) continue;
     setStrategyButtons(strategy, Boolean(status.running || status.task_active), status.available !== false);
