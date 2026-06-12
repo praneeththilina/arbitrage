@@ -233,7 +233,7 @@ class PaperEngine:
         }
 
         if self._on_trade:
-            self._on_trade(result)
+            await self._on_trade(result)
         return result
 
     async def _execute_triangular(self, op, validation: Dict) -> Dict:
@@ -277,7 +277,7 @@ class PaperEngine:
         }
 
         if self._on_trade:
-            self._on_trade(result)
+            await self._on_trade(result)
         return result
 
     async def get_status(self) -> Dict:
