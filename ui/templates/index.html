@@ -35,6 +35,7 @@ tr:hover td{background:#1e293b}
 .opportunity .title{font-weight:600;margin-bottom:4px}
 .opportunity .detail{display:flex;gap:12px;color:#94a3b8;flex-wrap:wrap}
 .opportunity .detail span{white-space:nowrap}
+.opportunity .reject-reason{margin-top:4px;color:#ef4444;font-size:11px}
 .controls{grid-column:1/-1;display:flex;gap:8px;padding:6px 16px;background:#111827;border-radius:8px;align-items:center;flex-wrap:wrap}
 .controls button{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s}
 .controls button:hover{opacity:.8}
@@ -337,6 +338,7 @@ function addOpportunity(msg) {
 
   if (strat === 'funding') {
     const nf = d.next_funding_time ? fmtCountdown(d.next_funding_time - Date.now()) : '-';
+    const reject = d.rejection_reason;
     html = `<div class="opportunity funding" data-key="${key}">
       <div class="title"><span class="badge ${d.action.includes('short') ? 'sell' : 'buy'}">${d.action}</span> ${d.symbol}</div>
       <div class="detail">
@@ -346,8 +348,10 @@ function addOpportunity(msg) {
         <span>Next: ${nf}</span>
         <span>Pays every 8h</span>
       </div>
+      ${reject ? `<div class="reject-reason">${reject}</div>` : ''}
     </div>`;
   } else {
+    const reject = d.rejection_reason;
     html = `<div class="opportunity triangular" data-key="${key}">
       <div class="title">${d.path}</div>
       <div class="detail">
@@ -355,6 +359,7 @@ function addOpportunity(msg) {
         <span>Rate: ${d.rate}</span>
         <span>Conf: ${fmt(d.confidence)}</span>
       </div>
+      ${reject ? `<div class="reject-reason">${reject}</div>` : ''}
     </div>`;
   }
 

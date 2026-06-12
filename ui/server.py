@@ -62,7 +62,7 @@ async def ticker_broadcaster():
                 tickers_data = {}
                 
                 for sym, t in list(client.tickers.items())[:settings.max_symbols]:
-                    if t.spot_price > 0 or t.futures_price > 0:
+                    if t.spot_price > 0 and t.futures_price > 0:
                         tickers_data[sym] = {
                             "spot": t.spot_price,
                             "futures": t.futures_price,
@@ -133,6 +133,13 @@ async def lifespan(app: FastAPI):
             logger.error(f"DB Error: {e}")
             db_op_id = None
 
+        rejection_reason = None
+        validation = paper.validate_funding_op(op)
+        if not validation["valid"]:
+            rejection_reason = validation["reason"]
+        elif not paper._auto_trade:
+            rejection_reason = "auto-trade disabled"
+
         await manager.broadcast({
             "type": "opportunity",
             "strategy": "funding",
@@ -147,6 +154,7 @@ async def lifespan(app: FastAPI):
                 "confidence": round(op.confidence, 4),
                 "db_id": db_op_id,
                 "next_funding_time": op.details.get("next_funding_time", 0),
+                "rejection_reason": rejection_reason,
             }
         })
 
@@ -162,6 +170,13 @@ async def lifespan(app: FastAPI):
             logger.error(f"DB Error: {e}")
             db_op_id = None
 
+        rejection_reason = None
+        validation = paper.validate_triangular_op(op)
+        if not validation["valid"]:
+            rejection_reason = validation["reason"]
+        elif not paper._auto_trade:
+            rejection_reason = "auto-trade disabled"
+
         await manager.broadcast({
             "type": "opportunity",
             "strategy": "triangular",
@@ -172,6 +187,7 @@ async def lifespan(app: FastAPI):
                 "legs": op.legs,
                 "confidence": round(op.confidence, 4),
                 "db_id": db_op_id,
+                "rejection_reason": rejection_reason,
             }
         })
 
