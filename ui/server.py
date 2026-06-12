@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from config import settings
 from exchange.client import BinanceClient
 from strategies.funding_arb import FundingArbitrage
+from strategies.basis_arb import BasisArbitrage
 from strategies.triangular_arb import TriangularArbitrage
 from trading.engine import PaperEngine
 from trading.live_engine import LiveEngine
@@ -21,10 +22,12 @@ logger = logging.getLogger(__name__)
 
 client: BinanceClient = None
 funding_strategy: FundingArbitrage = None
+basis_strategy: BasisArbitrage = None
 triangular_strategy: TriangularArbitrage = None
 engine = None
 start_time: float = 0
 _funding_task: asyncio.Task = None
+_basis_task: asyncio.Task = None
 _triangular_task: asyncio.Task = None
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -125,7 +128,7 @@ async def ticker_broadcaster():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client, funding_strategy, triangular_strategy, engine, start_time
+    global client, funding_strategy, basis_strategy, triangular_strategy, engine, start_time
     await init_db()
     
     start_time = time.time()
@@ -153,7 +156,8 @@ async def lifespan(app: FastAPI):
     await engine.start()
 
     funding_strategy = FundingArbitrage(client)
-    
+    basis_strategy = BasisArbitrage(client)
+
     triangular_strategy = TriangularArbitrage(client)
     triangular_strategy.resolve_dynamic_paths(symbols, spot_exchange)
 
@@ -196,6 +200,43 @@ async def lifespan(app: FastAPI):
         if trade:
             logger.info(f"Funding arb executed: {op.symbol} ${trade['notional']}")
 
+    async def on_basis_op(op):
+        try:
+            from database import save_opportunity
+            db_op_id = await save_opportunity("basis", op.symbol, op.details, op.expected_profit_pct / 100, op.expected_profit_usdt, op.confidence)
+        except Exception as e:
+            logger.error(f"DB Error: {e}")
+            db_op_id = None
+
+        rejection_reason = None
+        validation = engine.validate_basis_op(op)
+        if not validation["valid"]:
+            rejection_reason = validation["reason"]
+        elif not engine._auto_trade:
+            rejection_reason = "auto-trade disabled"
+
+        await manager.broadcast({
+            "type": "opportunity",
+            "strategy": "basis",
+            "data": {
+                "symbol": op.symbol,
+                "basis_pct": round(op.basis_pct, 4),
+                "net_basis_pct": round(op.net_basis_pct, 4),
+                "spot_price": op.spot_price,
+                "futures_price": op.futures_price,
+                "action": op.action,
+                "expected_profit_pct": round(op.expected_profit_pct, 4),
+                "expected_profit_usdt": round(op.expected_profit_usdt, 2),
+                "confidence": round(op.confidence, 4),
+                "db_id": db_op_id,
+                "rejection_reason": rejection_reason,
+            }
+        })
+
+        trade = await engine.evaluate_and_execute("basis", op)
+        if trade:
+            logger.info(f"Basis arb executed: {op.symbol} ${trade['notional']}")
+
     async def on_triangular_op(op):
         try:
             from database import save_opportunity
@@ -233,6 +274,7 @@ async def lifespan(app: FastAPI):
         await manager.broadcast({"type": "trade", "data": result})
 
     funding_strategy.on_opportunity(on_funding_op)
+    basis_strategy.on_opportunity(on_basis_op)
     triangular_strategy.on_opportunity(on_triangular_op)
     engine.on_trade(on_trade)
 
@@ -243,6 +285,8 @@ async def lifespan(app: FastAPI):
 
     if funding_strategy:
         funding_strategy.stop()
+    if basis_strategy:
+        basis_strategy.stop()
     if triangular_strategy:
         triangular_strategy.stop()
     if engine:
@@ -273,7 +317,7 @@ async def get_status():
 
 @app.post("/api/start/{strategy}")
 async def start_strategy(strategy: str):
-    global _funding_task, _triangular_task
+    global _funding_task, _basis_task, _triangular_task
     if strategy == "funding" and funding_strategy:
         if funding_strategy.is_running or _task_active(_funding_task):
             return {"status": "already_running", "strategy": strategy, "strategies": _strategy_status()}

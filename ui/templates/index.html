@@ -823,6 +823,10 @@ input:checked + .switch-slider:before {
   border-left-color: var(--amber);
 }
 
+.opportunity.basis {
+  border-left-color: var(--blue);
+}
+
 .opportunity.triangular {
   border-left-color: var(--purple);
 }
@@ -1122,6 +1126,11 @@ input:checked + .switch-slider:before {
                   <button class="btn btn-danger" id="fundingStop" onclick="toggleStrategy('funding','stop')" style="display:none">Stop</button>
                 </div>
                 <div class="strat-btn-group">
+                  <span class="strat-title">Basis Strategy</span>
+                  <button class="btn btn-success" id="basisStart" onclick="toggleStrategy('basis','start')">Start</button>
+                  <button class="btn btn-danger" id="basisStop" onclick="toggleStrategy('basis','stop')" style="display:none">Stop</button>
+                </div>
+                <div class="strat-btn-group">
                   <span class="strat-title">Triangular Strategy</span>
                   <button class="btn btn-success" id="triangularStart" onclick="toggleStrategy('triangular','start')">Start</button>
                   <button class="btn btn-danger" id="triangularStop" onclick="toggleStrategy('triangular','stop')" style="display:none">Stop</button>
@@ -1155,6 +1164,19 @@ input:checked + .switch-slider:before {
               <div class="empty-feed">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 <span>Waiting for funding opportunities...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel opps-panel">
+            <div class="panel-header">
+              <h3>Basis Opportunities</h3>
+              <span class="feed-live-dot">LIVE STREAM</span>
+            </div>
+            <div class="panel-body scrollable-y" id="basisOpps">
+              <div class="empty-feed">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 4px;"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span>Waiting for basis opportunities...</span>
               </div>
             </div>
           </div>
@@ -1604,7 +1626,8 @@ function updateTradeSize(val) {
 function addOpportunity(msg) {
   const strat = msg.strategy;
   const d = msg.data;
-  const id = strat === 'funding' ? 'fundingOpps' : 'triangularOpps';
+  const containers = {funding: 'fundingOpps', basis: 'basisOpps', triangular: 'triangularOpps'};
+  const id = containers[strat] || 'triangularOpps';
   const container = document.getElementById(id);
   if (!container) return;
 
@@ -1613,7 +1636,7 @@ function addOpportunity(msg) {
     container.innerHTML = '';
   }
 
-  const key = strat === 'funding' ? d.symbol : d.path;
+  const key = strat === 'funding' || strat === 'basis' ? d.symbol : d.path;
   const existing = container.querySelector(`[data-key="${key}"]`);
   let html = '';
 
@@ -1643,6 +1666,35 @@ function addOpportunity(msg) {
         <div class="stat-box">
           <span class="stat-label">Next Pay</span>
           <span class="stat-value" style="color:var(--text-secondary)">${nf}</span>
+        </div>
+      </div>
+      ${reject ? `<div class="reject-banner">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>Rejection: <strong>${reject}</strong></span>
+      </div>` : ''}
+    </div>`;
+  } else if (strat === 'basis') {
+    const reject = d.rejection_reason;
+    html = `<div class="opportunity basis" data-key="${key}">
+      <div class="opp-header">
+        <div class="opp-title">
+          <span>${d.symbol}</span>
+          <span class="badge ${d.action === 'short_perp_long_spot' ? 'badge-short' : 'badge-long'}">${d.action === 'short_perp_long_spot' ? 'Short Perp / Long Spot' : 'Long Perp / Short Spot'}</span>
+        </div>
+        <span class="badge badge-profit ${d.expected_profit_pct > 0 ? 'badge-long' : 'badge-short'}">Net: ${d.expected_profit_pct}%</span>
+      </div>
+      <div class="opp-stats">
+        <div class="stat-box">
+          <span class="stat-label">Basis</span>
+          <span class="stat-value ${d.basis_pct > 0 ? 'green' : 'red'}">${d.basis_pct}%</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Net USDT</span>
+          <span class="stat-value">$${fmt(d.expected_profit_usdt)}</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Confidence</span>
+          <span class="stat-value">${fmt(d.confidence)}</span>
         </div>
       </div>
       ${reject ? `<div class="reject-banner">

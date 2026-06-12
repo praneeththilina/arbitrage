@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     max_symbols: int = 100
     min_spread_pct: float = 0.001
     min_funding_rate_abs: float = 0.00001
+    min_basis_profit_pct: float = 0.05
 
     taker_fee: float = 0.001
     maker_fee: float = 0.001

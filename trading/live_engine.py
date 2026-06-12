@@ -128,6 +128,44 @@ class LiveEngine:
         result["pos_size"] = pos_size
         return result
 
+    def validate_basis_op(self, op) -> Dict:
+        result = {"valid": False, "reason": "", "net_profit": 0.0, "pos_size": 0.0}
+
+        if not op.spot_price or not op.futures_price or op.spot_price <= 0 or op.futures_price <= 0:
+            result["reason"] = "invalid prices"
+            return result
+
+        pos_size = min(self._get_position_size(), settings.max_position_size_usdt)
+        if pos_size > self.balance_usdt or pos_size <= 10:
+            result["reason"] = "insufficient balance or below minimum"
+            return result
+
+        net_profit_usdt = pos_size * (op.expected_profit_pct / 100.0)
+        if net_profit_usdt < settings.min_net_profit_usdt:
+            result["reason"] = "below minimum net profit"
+            return result
+
+        if op.net_basis_pct < settings.min_basis_profit_pct:
+            result["reason"] = "basis below threshold"
+            return result
+
+        if len(self.positions) >= settings.max_concurrent_positions:
+            result["reason"] = "max concurrent positions reached"
+            return result
+
+        if any(p.symbol == op.symbol and p.status == "open" for p in self.positions.values()):
+            result["reason"] = "position active"
+            return result
+
+        if self._is_on_cooldown(f"basis_{op.symbol}"):
+            result["reason"] = "on cooldown"
+            return result
+
+        result["valid"] = True
+        result["net_profit"] = net_profit_usdt
+        result["pos_size"] = pos_size
+        return result
+
     def validate_triangular_op(self, op) -> Dict:
         result = {"valid": False, "reason": "", "net_profit": 0.0, "pos_size": 0.0}
 
@@ -156,7 +194,13 @@ class LiveEngine:
             if validation["valid"]:
                 self._set_cooldown(f"funding_{op.symbol}")
                 return await self._open_funding_position(op, validation)
-            
+
+        elif op_type == "basis":
+            validation = self.validate_basis_op(op)
+            if validation["valid"]:
+                self._set_cooldown(f"basis_{op.symbol}")
+                return await self._open_basis_position(op, validation)
+
         elif op_type == "triangular":
             validation = self.validate_triangular_op(op)
             if validation["valid"]:
@@ -179,8 +223,8 @@ class LiveEngine:
         spot_qty = round(spot_qty, 3)
         futures_qty = round(futures_qty, 3)
 
-        spot_side = "SELL" if is_short else "BUY"
-        futures_side = "BUY" if "long_perp" in op.action else "SELL"
+        spot_side = "BUY" if is_short else "SELL"
+        futures_side = "SELL" if is_short else "BUY"
 
         # Set Isolated Margin before opening futures position
         await self._client.set_margin_type(op.symbol, "ISOLATED")
@@ -246,16 +290,80 @@ class LiveEngine:
             await self._on_trade(result)
         return result
 
+    async def _open_basis_position(self, op, validation: Dict) -> Optional[Dict]:
+        pos_size = validation["pos_size"]
+        is_short = "short" in op.action
+
+        op_id = await save_opportunity("basis", op.symbol, op.details, op.expected_profit_pct / 100, validation["net_profit"], op.confidence)
+
+        spot_qty = round(pos_size / op.spot_price, 3)
+        futures_qty = round(pos_size / op.futures_price, 3)
+        spot_side = "BUY" if is_short else "SELL"
+        futures_side = "SELL" if is_short else "BUY"
+
+        await self._client.set_margin_type(op.symbol, "ISOLATED")
+        logger.info(f"LIVE EXECUTION: Basis Arb {op.symbol}")
+
+        spot_order = await self._client.create_spot_order(op.symbol, spot_side, "MARKET", spot_qty)
+        fut_order = await self._client.create_futures_order(op.symbol, futures_side, "MARKET", futures_qty)
+
+        if "orderId" not in spot_order or "orderId" not in fut_order:
+            logger.error(f"Basis execution failed! Spot: {spot_order}, Fut: {fut_order}")
+            return None
+
+        spot_order_id = await save_order(op_id, "basis_arb", op.symbol, spot_side, op.spot_price, spot_qty)
+        fut_order_id = await save_order(op_id, "basis_arb", f"{op.symbol}_PERP", futures_side, op.futures_price, futures_qty)
+
+        pos_id = f"{op.symbol}_basis_{uuid.uuid4().hex[:8]}"
+        self.positions[pos_id] = LivePosition(
+            id=pos_id,
+            symbol=op.symbol,
+            strategy="basis",
+            side=op.action,
+            entry_spot_price=op.spot_price,
+            entry_futures_price=op.futures_price,
+            quantity_spot=spot_qty,
+            quantity_futures=futures_qty,
+            notional=pos_size,
+            opened_at=time.time(),
+            fees_paid=0.0,
+            is_short_perp=is_short,
+        )
+
+        result = {
+            "event": "position_opened",
+            "type": "basis",
+            "symbol": op.symbol,
+            "orders": [
+                {"id": spot_order_id, "symbol": op.symbol, "side": spot_side, "price": op.spot_price, "qty": spot_qty, "exchange_id": spot_order.get("orderId")},
+                {"id": fut_order_id, "symbol": f"{op.symbol}_PERP", "side": futures_side, "price": op.futures_price, "qty": futures_qty, "exchange_id": fut_order.get("orderId")},
+            ],
+            "notional": round(pos_size, 2),
+            "fee": 0.0,
+            "balance_remaining": self.balance_usdt,
+            "locked": self.locked_usdt,
+            "action": op.action,
+            "basis_pct": round(op.basis_pct, 4),
+            "net_basis_pct": round(op.net_basis_pct, 4),
+            "expected_profit": round(validation["net_profit"], 2),
+            "position_id": pos_id,
+            "trade_time": time.strftime("%H:%M:%S"),
+        }
+
+        if self._on_trade:
+            await self._on_trade(result)
+        return result
+
     async def close_position(self, position_id: str, client=None) -> Optional[Dict]:
         pos = self.positions.get(position_id)
         if not pos or pos.status != "open":
             return None
 
         # Execute market orders to close
-        spot_side = "BUY" if pos.side.startswith("short_perp_long_spot") else "SELL"
+        spot_side = "SELL" if pos.side.startswith("short_perp_long_spot") else "BUY"
         futures_side = "BUY" if pos.is_short_perp else "SELL"
 
-        logger.info(f"LIVE EXECUTION: Closing Funding Arb {pos.symbol}")
+        logger.info(f"LIVE EXECUTION: Closing {pos.strategy} position {pos.symbol}")
 
         await self._client.create_spot_order(pos.symbol, spot_side, "MARKET", pos.quantity_spot)
         await self._client.create_futures_order(pos.symbol, futures_side, "MARKET", pos.quantity_futures)
@@ -264,7 +372,7 @@ class LiveEngine:
 
         result = {
             "event": "position_closed",
-            "type": "funding",
+            "type": pos.strategy,
             "symbol": pos.symbol,
             "notional": round(pos.notional, 2),
             "trade_time": time.strftime("%H:%M:%S"),
